@@ -20,6 +20,9 @@ case "$TARGET" in
   seq|sequencer)
     FILE="sim_output/tb_npu_sequencer.vcd"
     ;;
+  epi|epilogue|obuf)
+    FILE="sim_output/tb_npu_epilogue.vcd"
+    ;;
   16x16|array_16x16|array|*)
     FILE="sim_output/tb_npu_array_16x16.vcd"
     ;;

@@ -488,4 +488,115 @@ Detailed chronological record of design decisions, microarchitectural trade-offs
 - **Waveforms Generated:**
   - `sim_output/tb_npu_sequencer.vcd` (477 KB) — Viewable via `./scripts/view_wave.sh seq`.
 
+---
+
+## 2026-09-28 — Milestone 6: Requantization Epilogue (`npu_epilogue`) & Output Buffer (`npu_obuf`)
+
+### 1. Context & Objectives
+- **Target:** Transform 32-bit accumulators from the systolic drain unit back into quantized 8-bit activations with bias addition, fixed-point scale multiplication, rounding, saturation clamping, optional activation functions (ReLU), and stage them in a double-buffered SRAM buffer.
+- **Exit Criterion (from SPEC.md):** `npu_epilogue`, `npu_obuf` double-buffered; requantization verified bit-exact against Python model across 1000+ random and corner inputs including saturation and rounding modes; buffer ping-pong verified under concurrent write/read.
+
+### 2. Microarchitectural Decisions & Mathematical Formulations
+
+#### A. Bit-Exact Fixed-Point Requantization Pipeline
+Converting a 32-bit accumulated sum $A_{32}$ to an 8-bit quantized activation $Y_8$ requires a precise mathematical pipeline:
+1. **Bias Addition:**
+   $$P_{\text{biased}} = A_{32} + \text{bias}_{32} \quad (\text{33-bit signed})$$
+2. **Fixed-Point Scaling Multiplier:**
+   $$P_{\text{scaled}} = P_{\text{biased}} \times \text{mult}_{32} \quad (\text{65-bit signed})$$
+3. **Symmetrical Rounding Half Away From Zero:**
+   Standard truncation introduces negative DC bias. Rounding half away from zero symmetrically rounds $+0.5 \to +1$ and $-0.5 \to -1$:
+   $$\text{For } P_{\text{scaled}} \ge 0: \quad P_{\text{rounded}} = (P_{\text{scaled}} + 2^{S-1}) \gg S$$
+   $$\text{For } P_{\text{scaled}} < 0: \quad P_{\text{rounded}} = -((-P_{\text{scaled}} + 2^{S-1}) \gg S)$$
+   where $S \in [0, 31]$ is the right-shift parameter.
+4. **Activation Function (ReLU):**
+   $$\text{If } \text{relu\_en} = 1: \quad Y = \max(0, P_{\text{rounded}})$$
+5. **Signed INT8 Saturation Clamping:**
+   $$\text{If } Y > +127 \implies Y = +127$$
+   $$\text{If } Y < -128 \implies Y = -128$$
+
+#### B. 2-Stage Pipelined 16-Lane SIMD Datapath (`npu_epilogue.sv`)
+- To sustain a peak throughput of **1 tile row per cycle (16 lanes)** matching `npu_drain`:
+  - **Stage 1 (Multiplier Stage):** 16 parallel 33-bit $\times$ 32-bit signed multipliers compute 65-bit intermediate scaled products. Registers store:
+    - $16 \times 65$-bit scaled products
+    - Global parameters (`rq_shift`, `relu_en`)
+    - Pipeline valid handshake (`valid_stage1`)
+  - **Stage 2 (Rounding & Clamp Stage):** 16 parallel rounding, shift, ReLU, and saturation units output sixteen 8-bit values packed into a 128-bit memory word (`out_data[127:0]`).
+  - Total latency: 2 clock cycles; throughput: 1 128-bit word per cycle.
+
+#### C. Double-Buffered Ping-Pong Output Buffer (`npu_obuf.sv`)
+- **Memory Organization:** Wraps two 256 B `npu_sram` macros (`bank0` and `bank1`), providing 512 Bytes total storage.
+  - One bank holds a full $16 \times 16$ INT8 tile ($16 \text{ rows} \times 16 \text{ bytes/row} = 256 \text{ Bytes}$).
+- **Concurrent Non-Interfering Access:**
+  - `cur_bank` (1 bit) points to the bank currently receiving stream writes from the epilogue unit at address `wr_addr[3:0]`.
+  - The opposite bank (`!cur_bank`) is simultaneously exposed to the host/DMA read port at `rd_addr[3:0]`.
+  - Zero write-after-read conflicts, zero contention stalls.
+  - When a tile write finishes, the sequencer pulses `bank_swap`, instantly toggling `cur_bank <= ~cur_bank`.
+
+### 3. Implementation Steps
+
+1. **Golden Epilogue Model & Vector Generator (`model/golden_epilogue.py`):**
+   - Implemented exact fixed-point requantization matching two's complement behavior.
+   - Generated 1,332 test vectors (`tb/vectors/epilogue_vectors.txt`) covering:
+     - Exact rounding tie-breaks ($+0.5 \to +1$, $-0.5 \to -1$, $+2.5 \to +3$, $-2.5 \to -3$)
+     - Saturation bounds: $+127, +128, +1000 \to +127$; $-128, -129, -1000 \to -128$
+     - Negative and positive biases
+     - ReLU on positive, zero, and negative outputs
+     - Shift amounts $S \in [0, 31]$
+     - Extreme multiplier values and random sweeps
+
+2. **SIMD Epilogue RTL (`src/epilogue/npu_epilogue.sv`):**
+   - Implemented 16-lane parameterized SIMD datapath.
+   - Addressed Yosys static-cast negative literal parsing quirk by expressing negation as `64'd0 - abs_rounded`.
+
+3. **Output Staging Buffer RTL (`src/epilogue/npu_obuf.sv`):**
+   - Implemented ping-pong bank routing logic around two `npu_sram` instances with `bank_swap` control.
+
+4. **Comprehensive Testbench (`tb/unit/tb_npu_epilogue.sv`):**
+   - Suite 1: Exhaustive verification across all 1,332 golden reference vectors.
+   - Suite 2: 16-lane SIMD parallel operation check across varied per-lane accumulators.
+   - Suite 3: Full $16 \times 16$ tile streaming write test with address sequencing.
+   - Suite 4: Concurrent readback during active write verifying double-buffer isolation.
+
+5. **Automated Runner & Scripts:**
+   - [scripts/run_epilogue_test.py](file:///Users/dhruv/Documents/int8_npu/scripts/run_epilogue_test.py): Dual-simulator runner and Yosys synthesis auditor.
+   - [scripts/sim_epilogue.sh](file:///Users/dhruv/Documents/int8_npu/scripts/sim_epilogue.sh): Standalone bash runner.
+   - [scripts/view_wave.sh](file:///Users/dhruv/Documents/int8_npu/scripts/view_wave.sh): Added `epi` target to inspect `sim_output/tb_npu_epilogue.vcd`.
+
+### 4. Verification Results & Synthesis Audit
+
+- **Dual-Simulator Results:**
+  ```text
+  [TEST 1] Golden Model Vector Verification (1332 vectors)
+    -> Applied 1332 test vectors from tb/vectors/epilogue_vectors.txt
+  [PASS] All 1332 golden vectors verified bit-exactly!
+
+  [TEST 2] 16-Lane SIMD Parallel Operation
+    -> Applied 16 distinct accumulators across all lanes simultaneously
+    -> Verified 128-bit packed output: 0x7f...
+  [PASS] 16-lane SIMD datapath verified!
+
+  [TEST 3] Full 16x16 Tile Epilogue & Buffer Storage
+    -> Streamed 16 rows into npu_epilogue and staged into npu_obuf bank 0
+    -> Swapped banks and verified 16 rows read back
+  [PASS] 16x16 tile drain, requantization, and buffer storage verified!
+
+  [TEST 4] Double-Buffered Ping-Pong Isolation
+    -> Initiated write stream into Bank 1
+    -> Simultaneously read previously staged Bank 0
+    -> Verified concurrent reads returned uncorrupted data
+  [PASS] Double-buffer ping-pong isolation verified!
+
+  ALL 4 TESTS PASSED! (0 errors)
+  ```
+  - `iverilog`: 4/4 suites passed (0 errors)
+  - `verilator 5.050`: 4/4 suites passed (0 errors)
+
+- **Yosys Synthesis & Latch-Free Audit:**
+  - `npu_obuf`: Exactly **1 DFF** (`cur_bank`), 2 `npu_sram` blackbox macros, **0 latches**.
+  - `npu_epilogue`: Exactly **0 latches** (`select -assert-count 0 t:$_DLATCH_*`), **133 pipeline DFFs** (128 data bits + control pipeline registers).
+
+- **Waveforms Generated:**
+  - `sim_output/tb_npu_epilogue.vcd` (75 KB) — Viewable via `./scripts/view_wave.sh epi`.
+
 
