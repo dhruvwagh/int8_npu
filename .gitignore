@@ -1,0 +1,38 @@
+# Simulation outputs
+sim_output/
+*.vvp
+*.vcd
+*.fst
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Cocotb
+tb/cocotb/sim_build/
+tb/cocotb/results.xml
+tb/cocotb/run.log
+
+# Generated test vectors (regenerate via compiler/)
+tb/vectors/*.hex
+tb/vectors/*.bin
+
+# OpenLane PnR run artifacts
+pd/gds/runs/
+
+# PDK / standard cell libs (source from PDK installation)
+pd/lib/
+
+# LaTeX intermediates
+docs/*.aux
+docs/*.log
+docs/*.out
+docs/*.synctex.gz
+
+# OS / editor
+.DS_Store
+*.swp
+*~
+.vscode/

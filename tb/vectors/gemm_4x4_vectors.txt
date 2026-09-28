@@ -1,0 +1,101 @@
+# GEMM Test Suite: ARR_M=4, ARR_N=4, num_tests=25
+TEST 0 4 4 4
+A 0a 00 00 00 00 0a 00 00 00 00 0a 00 00 00 00 0a
+B 05 00 00 00 00 05 00 00 00 00 05 00 00 00 00 05
+C 00000032 00000000 00000000 00000000 00000000 00000032 00000000 00000000 00000000 00000000 00000032 00000000 00000000 00000000 00000000 00000032
+TEST 1 4 4 4
+A 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f
+B 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80
+C ffff0200 ffff0200 ffff0200 ffff0200 ffff0200 ffff0200 ffff0200 ffff0200 ffff0200 ffff0200 ffff0200 ffff0200 ffff0200 ffff0200 ffff0200 ffff0200
+TEST 2 4 4 1
+A 19 1c 2e 2e
+B a3 ed 4b 17
+C fffff6eb fffffe25 00000753 0000023f fffff5d4 fffffdec 00000834 00000284 ffffef4a fffffc96 00000d7a 00000422 ffffef4a fffffc96 00000d7a 00000422
+TEST 3 4 4 1
+A 16 6a 39 68
+B ae 01 e9 b8
+C fffff8f4 00000016 fffffe06 fffff9d0 ffffde0c 0000006a fffff67a ffffe230 ffffedbe 00000039 fffffae1 ffffeff8 ffffdeb0 00000068 fffff6a8 ffffe2c0
+TEST 4 4 4 2
+A 31 7d b2 af 56 60 e7 d5
+B cc ab 88 ad c9 16 89 d9
+C ffffdb31 fffffa79 ffffaeed ffffdd12 0000213f 000012f0 00004a37 000025a1 ffffd9e8 ffffebb2 ffffab10 ffffd57e 00000e51 0000049b 00001fb5 00000ea8
+TEST 5 4 4 16
+A 10 ef 0e f3 f9 d6 e0 6c 69 b0 90 f3 e9 14 4d c6 8c c9 6c 49 d8 ef 5b 51 70 81 26 5c 6d 81 50 63 ac 9c eb 86 a1 88 d2 03 08 23 26 c4 86 80 36 be 3e 4c 40 bd cb ff 81 53 ad 55 45 4a e8 ab 39 b6
+B bd 2a 5b e8 64 48 50 3d 7e ca 72 a5 61 42 c3 21 7f 3a c8 f0 65 0f ea 6d 9b a9 ba 3d 45 d5 de bb 9d 51 45 55 64 f6 13 4c 5b 70 09 b6 3f f6 26 04 6b fb cd 4b 3b ba c7 bb 68 ee 2b be a1 2f f8 aa
+C ffffc9c3 ffffcb00 000028a0 ffffdc68 00000459 00000587 ffffff82 ffffde1f ffff521a ffffd73f 00003f01 ffffb6fe 0000c266 000015c2 00009e94 ffffc018
+TEST 6 4 4 1
+A 8c 99 ef ff
+B 18 14 a2 84
+C fffff520 fffff6f0 00002a98 00003830 fffff658 fffff7f4 000025d2 000031e4 fffffe68 fffffeac 0000063e 0000083c ffffffe8 ffffffec 0000005e 0000007c
+TEST 7 4 4 4
+A 08 0c f0 ea bb 46 b0 af d2 0d 21 dc bc a7 50 83
+B 13 26 36 a4 72 af 1c f8 dd b4 4a 93 1e a7 ee 3a
+C 0000058c 000009ca ffffffec fffffe94 00001b7f 00001385 ffffe7ac 00002652 fffff9a5 fffff7c7 000003ca fffff9eb ffffb9bc 000025c6 000007d6 ffffdcd6
+TEST 8 4 4 2
+A 5e e6 a9 6b ce 9a f1 ab
+B a1 7f a2 20 bd cf 6d 03
+C ffffe3ec 0000339c ffffd26a 00000b72 00000448 ffffc05c 00004d81 fffff661 00002d40 fffffab8 ffffe6ee fffff88e 00001bd0 000008d4 ffffe151 fffffd21
+TEST 9 4 4 16
+A e3 11 a7 1e 9d d7 dc 5d 10 70 53 f6 9a b6 58 b7 5c c5 f3 b0 7d 06 3a 5d 86 f7 85 b4 94 0f 92 3b 98 e0 86 07 7e ad a2 c7 58 b0 9e e9 5a 8b 8b 4c 33 22 74 f3 10 ab ff 5d 67 a0 a9 72 c0 76 27 cc
+B e4 f1 1b 06 62 ba 6c 06 d9 56 7f 0a 18 75 cc 92 31 9b 2d de 49 9c cf 15 07 20 96 6b 8d ef 67 bc de 75 62 24 d2 28 54 43 1c 09 20 6c f6 9f f3 ac d9 21 1e 2c e2 60 8f d0 8a 8d 27 f0 ec 19 34 83
+C ffffb938 ffffe139 000045af 000031bc 00000f67 ffffbd6a ffffc79e ffffb84c 000052b6 00000c80 000017c5 ffffa299 ffff992d 0000288e 00003fe2 ffff8af8
+TEST 10 4 4 8
+A 1e d2 d5 88 5d ea 3b df 96 5a a7 ff af 55 c4 2b 0b d4 63 f7 fd d6 40 56 a0 d0 30 a0 87 f2 a2 c3
+B 47 1d 6f c1 c2 70 b8 e1 a8 fa 50 80 c6 54 67 ed 6a 27 0d e1 9d 53 5e 15 9e eb ec 13 eb d5 80 c8
+C 00005891 ffffd0a5 ffffe4c3 00001b20 ffffbca8 00002a0b ffffa6cc 00003eaf ffffdd29 ffffc6f4 ffffece3 ffffc0a5 fffff28d ffffba7c ffffe6cf 0000206f
+TEST 11 4 4 4
+A d8 47 4d 00 f6 c4 49 55 09 dd 2e 93 63 de 52 1d
+B 15 50 05 94 c4 93 9e c4 3f 02 2c f1 a4 a5 1f 4f
+C ffffff07 ffffd5df fffff146 fffffbb9 000000a9 fffff8c7 00002d9d 0000283c 00003b6f 000038d2 00000848 ffffe013 000019d9 000023bf 0000208e ffffe259
+TEST 12 4 4 2
+A 99 dd 5e ff a0 9b b1 14
+B 28 e4 c1 42 b7 39 d1 e5
+C fffff9e3 00000379 00001fc6 ffffe923 00000ef9 fffff57f ffffe90d 00001857 00000dcd fffff403 00002a2b fffff1e7 ffffedf4 00000d18 00000fc5 ffffe986
+TEST 13 4 4 4
+A c3 f7 3e 56 ee 97 7c ef 2e a7 99 70 2e e0 ea e5
+B 6b 21 5a ee ba b6 31 85 32 d1 01 08 0d df a7 f8
+C fffff971 ffffe445 ffffcb2d 000007dd 00002c8b 00000775 ffffebf8 0000381f 00001d22 00002421 ffffd7cc 000020cf 0000164f 000016b3 00001359 00000c4c
+TEST 14 4 4 4
+A 80 06 21 1f 9b 28 bd 0c b9 fd b4 72 f7 17 99 e8
+B 2d 07 f1 ef 83 00 68 4f 37 7e d2 fc c7 dc 91 c0
+C ffffe6c2 00000862 fffff691 00000216 ffffc9a6 ffffda93 00001d01 00001119 ffffcb46 ffffc89f ffffdf2b ffffe87a ffffe267 ffffd06f 000026c9 00000f4e
+TEST 15 4 4 4
+A 0e 73 38 01 a0 eb 19 e8 83 bb 6a 07 4b 74 ab 14
+B 91 42 07 78 f0 00 82 92 ba ea 3c 69 86 39 86 fd
+C ffffe2f4 ffffff05 ffffd46e ffffec1b 00002f8a ffffdfc2 00001902 ffffe68f 00001a31 ffffd839 0000340d 00000e73 ffffe5f1 00001f18 ffffab81 ffffce37
+TEST 16 4 4 2
+A 13 f3 b2 1c 24 64 17 9d
+B f6 5c ee 3e 8c e1 a3 98
+C 00000526 00000867 00000363 000009e2 fffff65c ffffe094 fffffb50 ffffe1bc ffffd148 000000d4 ffffd924 ffffe018 00002bf6 00001441 00002259 00002dca
+TEST 17 4 4 4
+A cc 9d 22 b3 49 f0 04 cd 49 4e 0b f8 dc 82 02 81
+B 65 d8 fe 63 94 1b 28 41 cc 5b d6 75 4e 84 5c 93
+C fffff6e2 00002f11 ffffcfb0 00000314 00001333 00000d08 ffffe9f2 00002fb6 fffff739 0000049b 000006f0 00003878 ffffffda 00003690 ffffbea0 00000913
+TEST 18 4 4 1
+A a5 5b ef fd
+B 2e 1e 77 5a
+C ffffefa6 fffff556 ffffd5b3 ffffe002 0000105a 00000aaa 00002a4d 00001ffe fffffcf2 fffffe02 fffff819 fffffa06 ffffff76 ffffffa6 fffffe9b fffffef2
+TEST 19 4 4 2
+A 56 26 2a cc 88 9f c0 57
+B 84 9b e3 80 58 e2 d2 73
+C ffffe368 ffffd99e ffffef6e ffffe612 ffffd9c8 fffff586 00000496 ffffd3a4 000018c8 00003ab6 00001f06 0000106d 00003ce8 00000f0e fffff79e 00004715
+TEST 20 4 4 1
+A 2f 43 21 d1
+B 03 53 7b d2
+C 0000008d 00000f3d 00001695 fffff78e 000000c9 000015b9 00002031 fffff3f6 00000063 00000ab3 00000fdb fffffa12 ffffff73 fffff0c3 ffffe96b 00000872
+TEST 21 4 4 16
+A ef 6d c3 52 49 cd e8 d6 8b 25 e2 d7 cb 14 66 4f be 40 e9 c8 18 83 01 4c 83 13 6f 50 74 44 40 27 f9 9e d2 3e c2 cf 0c ba f9 8e 76 0f bb 22 be a3 d1 94 4b 8e c3 16 23 ec 95 c5 e7 cb e4 be 4b a6
+B e2 38 32 06 63 50 0e 5f 74 c5 26 bf cd c0 5b ad d6 87 cb 5e 94 e4 41 87 65 e7 f0 16 21 7c aa 0f 34 de 1b f7 a2 bf 46 ed b1 04 80 87 e6 8a 4d 5b 25 fd d6 91 3a be ac a9 2f 3a e3 61 59 a3 c0 dc
+C 00000df5 fffff76d ffffed8e 00007809 00004af1 000015fc ffff3f38 00002af3 ffffa810 fffffe36 ffffe823 ffffad12 000008e7 000064c4 fffff3aa 0000168a
+TEST 22 4 4 4
+A 0f f5 78 23 7a 6b be 10 dc b7 db 6e 78 1b 92 70
+B cb e4 85 c3 96 3e f5 43 36 b7 a7 30 d1 b3 13 bf
+C 00001456 ffffcef3 ffffd225 00000729 ffffa994 00001a94 ffffd8eb ffffee7f 000009ae ffffdbb9 00002976 ffffd29b ffffb036 fffff718 fffff3bd ffffb969
+TEST 23 4 4 1
+A 64 28 35 50
+B 5c 4b fa 3d
+C 000023f0 00001d4c fffffda8 000017d4 00000e60 00000bb8 ffffff10 00000988 0000130c 00000f87 fffffec2 00000ca1 00001cc0 00001770 fffffe20 00001310
+TEST 24 4 4 2
+A 36 6d 8d cb 28 54 23 30
+B c4 94 e6 be 11 04 2f f6
+C fffffa95 ffffeaec 00000e87 ffffedd2 0000176f 00002fb0 000001f3 00001fb8 fffffc34 fffff070 00000b5c fffff268 fffffafc fffff1fc 00000542 fffff51a
