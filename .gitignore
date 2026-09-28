@@ -36,3 +36,4 @@ docs/*.synctex.gz
 *.swp
 *~
 .vscode/
+a.out

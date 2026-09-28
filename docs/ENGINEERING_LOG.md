@@ -271,3 +271,110 @@ Detailed chronological record of design decisions, microarchitectural trade-offs
   - `sim_output/tb_npu_pe.vcd` (342 KB)
 
 ---
+
+## 2026-09-28 — Milestone 4: SRAM Macro Wrappers, Ping-Pong Buffers & Wide Fetch Engine
+
+### 1. Context & Objectives
+- **Target:** Implement the on-chip storage hierarchy (`npu_sram`, `npu_buf_act`, `npu_buf_wgt`) and the tensor memory DMA streaming engine (`npu_fetch`).
+- **Exit Criterion (from SPEC.md):** Buffer swap overlaps fetch with compute, zero bubbles in steady state; weight-tile residency verified across multiple activation sweeps; SRAM macros blackboxed during Yosys synthesis to avoid flip-flop explosion.
+
+### 2. Microarchitectural Decisions & Analysis
+
+#### A. SRAM Macro Blackboxing vs The Flop-Inference Trap
+- **The Trap:** On-chip memory for 16×16 NPU with $K_{\text{tile}}=128$:
+  - Weight Buffer: $2 \times 2\text{ KB} = 4\text{ KB}$
+  - Activation Buffer: $2 \times 2\text{ KB} = 4\text{ KB}$
+  - Output Staging Buffer: $2 \times 256\text{ B} = 512\text{ B}$
+  - Total on-chip SRAM: $\mathbf{8.5\text{ KB} = 69,632\text{ bits}}$.
+  - If synthesized naively as SystemVerilog reg arrays, Yosys infers **~69,600 flip-flops** (~1.5 mm² on SkyWater 130 nm HD). This would dwarf the entire 256-PE compute array (~12.3k DFFs) by over $4\times$, skewing all area and power reports.
+- **The Solution:**
+  - `npu_sram.sv` is structured with Yosys attribute `(* blackbox *)` and conditional compilation (`ifdef SYNTHESIS`).
+  - Under simulation (`!SYNTHESIS`): Executes a behavioral synchronous RAM with realistic 1-cycle read latency.
+  - Under synthesis (`SYNTHESIS`): Treated as a fixed hard macro cell. Standard cell synthesis reports honest logic gates + flip-flops, with macro area accounted separately from OpenRAM datasheets.
+
+#### B. Ping-Pong Banking & Mutual Exclusion
+- Both `npu_buf_act` and `npu_buf_wgt` wrap two distinct 2 KB SRAM macros (`u_sram_bank0` and `u_sram_bank1`).
+- **Port Mutex:**
+  - When `cur_bank == 0`: Bank 0 is read-only for compute (`re = rd_en`, `we = 0`), Bank 1 is write-only for fetch (`we = wr_en`, `re = 0`).
+  - When `cur_bank == 1`: Bank 1 is read-only for compute, Bank 0 is write-only for fetch.
+- **Benefits:**
+  - Eliminates multiport SRAM cost: single-port (1RW) or simple dual-port (1R1W) OpenRAM macros can be used directly with zero contention.
+  - Zero read-write collisions or memory arbitration stalls.
+  - Single-cycle atomic bank swap via `swap` strobe.
+
+#### C. Tensor Memory Wide Fetch Engine (`npu_fetch.sv`)
+- **Bus Width:** 128-bit wide data bus ($16\text{ bytes/beat}$). At 50 MHz, delivers $800\text{ MB/s}$ bandwidth.
+- **Decoupled Request-Response Pipeline:**
+  - Tracks outgoing memory read requests (`req_cnt`) independently from incoming data beats (`resp_cnt`).
+  - Handles memory backpressure stalls (`mem_ready = 0`) and variable response latencies without dropped words or double counting.
+  - Generates single-cycle `fetch_done` pulse upon writing the complete requested tile into the idle buffer bank.
+
+#### D. Weight-Tile Residency
+- Neural network GEMM loops are ordered $M \rightarrow K \rightarrow N$:
+  - Weight tile $(M, K)$ is loaded once into the active weight buffer bank.
+  - Spatial activations sweep across the $N$ dimension.
+  - `npu_buf_wgt` holds the current weight bank resident across multiple activation buffer swaps without triggering memory refetches.
+  - On Conv2 ($N=196$, 13 tiles of 16), holding weight tiles resident slashes weight fetch memory traffic by **$\approx 13\times$** ($196 / 16 \approx 12.25$).
+
+### 3. Implementation Steps
+
+1. **RTL Design:**
+   - [src/buffer/npu_sram.sv](file:///Users/dhruv/Documents/int8_npu/src/buffer/npu_sram.sv): Parameterized SRAM wrapper (DW=128, WORDS=128 = 2 KB) with `(* blackbox *)`.
+   - [src/buffer/npu_buf_act.sv](file:///Users/dhruv/Documents/int8_npu/src/buffer/npu_buf_act.sv): 4 KB ping-pong activation buffer wrapping two `npu_sram` macros with multiplexed compute-read / fetch-write ports.
+   - [src/buffer/npu_buf_wgt.sv](file:///Users/dhruv/Documents/int8_npu/src/buffer/npu_buf_wgt.sv): 4 KB ping-pong weight buffer supporting persistent weight-tile residency.
+   - [src/ctrl/npu_fetch.sv](file:///Users/dhruv/Documents/int8_npu/src/ctrl/npu_fetch.sv): 128-bit wide fetch engine with decoupled request/response counters and buffer write generation.
+
+2. **Verification Environment (`tb/unit/tb_npu_fetch_buffer.sv`):**
+   - Implemented simulated 64 KB Tensor Memory model with programmable backpressure and pipeline delay emulation.
+   - Developed 5 comprehensive test suites:
+     - **Test 1:** Direct ping-pong buffer write, bank swap, and 1-cycle synchronous read.
+     - **Test 2:** Standalone `npu_fetch` transfer of 16 words (256 B) with zero-wait memory.
+     - **Test 3:** `npu_fetch` transfer of 32 words (512 B) under memory backpressure and random pipeline stalls.
+     - **Test 4:** Overlapped fetch and compute with continuous pipelined streaming (16 words/tile at 1 word/cycle) across bank swap boundaries.
+     - **Test 5:** Weight-tile residency verifying weight buffer persistence across 3 consecutive activation buffer swaps with zero refetch traffic.
+
+3. **Automation & Tooling:**
+   - [scripts/run_buffer_test.py](file:///Users/dhruv/Documents/int8_npu/scripts/run_buffer_test.py): Python runner automating simulation on Icarus Verilog and Verilator 5, followed by strict Yosys synthesis assertions.
+   - [scripts/sim_buffer.sh](file:///Users/dhruv/Documents/int8_npu/scripts/sim_buffer.sh): Executable bash wrapper.
+   - [scripts/view_wave.sh](file:///Users/dhruv/Documents/int8_npu/scripts/view_wave.sh): Added `buf` target to inspect `sim_output/tb_npu_fetch_buffer.vcd`.
+
+### 4. Verification Results & Synthesis Audit
+
+- **Dual-Simulator Results:**
+  ```text
+  [TEST 1] Direct Ping-Pong Buffer Write, Bank Swap, and 1-Cycle Read
+  [PASS] Test 1 completed: Verified ping-pong write, swap, and synchronous read.
+
+  [TEST 2] npu_fetch Transfer with Zero-Wait Memory (16 words = 256 B)
+    -> fetch_done received at time 525000. fetch_busy = 0
+  [PASS] Test 2 completed: 16 words transferred accurately by npu_fetch.
+
+  [TEST 3] npu_fetch Transfer under Memory Backpressure & Pipeline Stalls
+    -> Stalled transfer completed successfully at time 1545000
+  [PASS] Test 3 completed: 32 words transferred with 0 dropped beats under backpressure.
+
+  [TEST 4] Concurrent Overlapped Fetch & Compute with Pipelined Streaming
+    -> Starting concurrent Tile 0 compute read and Tile 1 background fetch...
+    -> Tile 0 compute complete and Tile 1 background fetch complete. Swapping banks...
+  [PASS] Test 4 completed: 16 words/tile streamed with 100% throughput and overlapped fetch!
+
+  [TEST 5] Weight Tile Residency (Preserving Weight Buffer across 3 Act Swaps)
+    -> Activation sweep pass 0: Reading resident weight tile...
+    -> Activation sweep pass 1: Reading resident weight tile...
+    -> Activation sweep pass 2: Reading resident weight tile...
+  [PASS] Test 5 completed: Weight tile held resident with ZERO refetch traffic!
+
+  ALL 5 TESTS PASSED! (0 errors)
+  ```
+  - `iverilog`: 5/5 suites passed (0 errors)
+  - `verilator 5.050`: 5/5 suites passed (0 errors)
+
+- **Yosys Synthesis & Flop Count Audit:**
+  - `npu_sram`: Blackboxed macro cell. Exactly **0 flip-flops** inferred from memory arrays.
+  - `npu_buf_act`: Exactly **1 DFF** (`cur_bank`), 2 `npu_sram` macro instantiations, 128 `$_MUX_` cells for the 128-bit read bus.
+  - `npu_buf_wgt`: Exactly **1 DFF** (`cur_bank`), 2 `npu_sram` macro instantiations, 128 `$_MUX_` cells for the 128-bit read bus.
+  - `npu_fetch`: Exactly **194 DFFs** (state register, address registers, write data buffer), **0 latches**.
+
+- **Waveforms Generated:**
+  - `sim_output/tb_npu_fetch_buffer.vcd` (237 KB) — Viewable via `./scripts/view_wave.sh buf`.
+

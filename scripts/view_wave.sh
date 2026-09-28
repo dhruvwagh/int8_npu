@@ -14,6 +14,9 @@ case "$TARGET" in
   4x4|array_4x4)
     FILE="sim_output/tb_npu_array_4x4.vcd"
     ;;
+  buf|buffer|fetch)
+    FILE="sim_output/tb_npu_fetch_buffer.vcd"
+    ;;
   16x16|array_16x16|array|*)
     FILE="sim_output/tb_npu_array_16x16.vcd"
     ;;
