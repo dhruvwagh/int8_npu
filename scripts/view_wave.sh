@@ -17,6 +17,9 @@ case "$TARGET" in
   buf|buffer|fetch)
     FILE="sim_output/tb_npu_fetch_buffer.vcd"
     ;;
+  seq|sequencer)
+    FILE="sim_output/tb_npu_sequencer.vcd"
+    ;;
   16x16|array_16x16|array|*)
     FILE="sim_output/tb_npu_array_16x16.vcd"
     ;;

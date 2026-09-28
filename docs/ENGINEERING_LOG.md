@@ -378,3 +378,114 @@ Detailed chronological record of design decisions, microarchitectural trade-offs
 - **Waveforms Generated:**
   - `sim_output/tb_npu_fetch_buffer.vcd` (237 KB) — Viewable via `./scripts/view_wave.sh buf`.
 
+---
+
+## 2026-09-28 — Milestone 5: Hardware Sequencer & M/N/K Multi-Loop Tiling Engine
+
+### 1. Context & Objectives
+- **Target:** Implement `npu_sequencer.sv` to orchestrate 3D nested loops ($M, K, N$), schedule DMA memory fetches, control ping-pong buffer swaps, sequence compute streaming, handle accumulator clear/drain, and compute partial edge-tile bounding boxes.
+- **Exit Criterion (from SPEC.md):** Full $M/N/K$ tiling verified for arbitrary layer geometries including partial edge tiles; reduction depth splitting ($K > K_{\text{TILE\_MAX}}$) verified with live accumulators and delayed draining; weight tile residency verified with $13\times$ traffic reduction on Conv2; synthesized to latch-free control logic in Yosys.
+
+### 2. Microarchitectural Decisions & Analysis
+
+#### A. Weight-Residency Priority Loop Nest ($M \rightarrow K \rightarrow N$)
+- **The Optimization:** Convolutional layers have large spatial dimensions ($N = H_{\text{out}} \times W_{\text{out}}$, e.g. Conv2 $N=196$) with moderate reduction depth ($K \le 128$).
+- Iterating $N$ as the innermost loop holds the weight tile $(M, K)$ resident in `npu_buf_wgt` for the entire spatial sweep.
+- On Conv2 ($M=16, N=196, K=64$), the weight tile is fetched **exactly once** for 13 spatial activation tiles, cutting weight memory traffic by **$13\times$**.
+
+#### B. Reduction Depth Splitting ($K > K_{\text{TILE\_MAX}}$) for Output Stationary
+- Output-stationary systolic arrays preserve partial sums in place within the PE accumulators.
+- When $K$ exceeds on-chip buffer capacity (e.g. FC layer $K=784$ with $K_{\text{tile}}=128$), $K$ is sliced into sub-tiles:
+  - Sub-tile 0 ($k_0 = 0..127$): `first_k = 1, last_k = 0`. Accumulators clear and accumulate.
+  - Sub-tiles 1..5 ($k_0 = 128..640$): `first_k = 0, last_k = 0`. Accumulators remain live, adding new products to the running sum.
+  - Sub-tile 6 ($k_0 = 768..783$): $k_{\text{len}} = 16$, `first_k = 0, last_k = 1`. Final 16 products accumulated, followed by accumulator snapshot and drain.
+- Eliminates the need to write intermediate partial sums to external memory or reload them for accumulation.
+
+#### C. Arbitrary Sub-Tile & Edge-Tile Geometry
+- Neural network layers frequently present non-tile-aligned dimensions:
+  - Conv1: $M=8 < \text{ARR\_M}$ (partial row channels).
+  - FC: $N=1 < \text{ARR\_N}$ (degenerate column vector).
+  - Spatial edges: Conv2 $N=196 = 12 \times 16 + 1 \times 4$ (last tile has $n_{\text{len}}=4$).
+- The sequencer calculates dynamic bounding boxes:
+  $$m_{\text{len}} = \min(\text{ARR\_M}, M - m_0), \quad n_{\text{len}} = \min(\text{ARR\_N}, N - n_0), \quad k_{\text{len}} = \min(K_{\text{tile}}, K - k_0)$$
+- Emits active masks `active_m_mask` and `active_n_mask` to zero-pad unallocated array inputs, ensuring non-active PEs accumulate 0 with zero software patching or hardware stalls.
+
+#### D. Built-in Hardware Performance Profiling
+- Tracks real-time hardware counters from `seq_start` to `seq_done`:
+  - `perf_cycles`: total wall clock cycles for the layer.
+  - `perf_macs`: cumulative MAC operations actually issued ($\sum m_{\text{len}} \times n_{\text{len}} \times k_{\text{len}}$).
+  - `perf_stall`: cycles stalled waiting for DMA fetch buffer readiness.
+- Directly measures hardware utilization:
+  $$\text{Utilization} = \frac{\text{perf\_macs}}{\text{perf\_cycles} \times 256}$$
+
+### 3. Implementation Steps
+
+1. **RTL Design ([src/ctrl/npu_sequencer.sv](file:///Users/dhruv/Documents/int8_npu/src/ctrl/npu_sequencer.sv)):**
+   - Implemented 11-state FSM: `S_IDLE`, `S_FETCH_WGT`, `S_FETCH_ACT`, `S_WAIT_FETCH`, `S_BUFFER_SWAP`, `S_COMPUTE_PRIME`, `S_COMPUTE_STREAM`, `S_COMPUTE_FILL`, `S_DRAIN_WAIT`, `S_NEXT_TILE`, `S_DONE`.
+   - Integrated tile descriptor formatting (`tile_desc_t`) with 32-bit address generation arithmetic for weights, activations, outputs, and bias.
+   - Implemented weight residency tracking (`wgt_resident`) and automatic loop-order selection (`k_split_multitile`).
+
+2. **Verification Suite ([tb/unit/tb_npu_sequencer.sv](file:///Users/dhruv/Documents/int8_npu/tb/unit/tb_npu_sequencer.sv)):**
+   - Emulated fetch engines, ping-pong buffer banking, and column drain modules.
+   - Developed 7 test suites:
+     - **Test 1:** Standard full-tile GEMM ($M=16, N=16, K=16$).
+     - **Test 2:** FC layer ($M=10, N=1, K=784$) with 7 $K$-slices, live accumulators, and single final drain.
+     - **Test 3:** Conv2 spatial sweep ($M=16, N=196, K=64$) with 13 tiles, verifying $13\times$ weight fetch reduction and edge tile $n_{\text{len}}=4$.
+     - **Test 4:** Conv1 partial channels ($M=8, N=32, K=25$) verifying row masking.
+     - **Test 5:** Non-aligned 3D edge tiles ($M=17, N=33, K=135$) verifying edge handling across all 3 dimensions simultaneously.
+     - **Test 6:** Error handling with invalid dimensions ($M=0$).
+     - **Test 7:** Immediate abort mid-execution.
+
+3. **Automation & Tooling:**
+   - [scripts/run_sequencer_test.py](file:///Users/dhruv/Documents/int8_npu/scripts/run_sequencer_test.py): Python runner for dual-simulator and synthesis check.
+   - [scripts/sim_sequencer.sh](file:///Users/dhruv/Documents/int8_npu/scripts/sim_sequencer.sh): Executable wrapper.
+   - [scripts/view_wave.sh](file:///Users/dhruv/Documents/int8_npu/scripts/view_wave.sh): Added `seq` option to view `sim_output/tb_npu_sequencer.vcd`.
+
+### 4. Verification Results & Synthesis Audit
+
+- **Dual-Simulator Results:**
+  ```text
+  [TEST 1] Standard Full-Tile GEMM: M=16, N=16, K=16
+    -> Layer finished: perf_cycles=60, perf_macs=4096, perf_stall=4
+    -> Tiles launched=1, Wgt fetches=1, Act fetches=1, Drains=1
+  [PASS] Standard Full-Tile GEMM completed successfully!
+
+  [TEST 2] FC Layer (K=784 Reduction Splitting): M=10, N=1, K=784
+    -> Layer finished: perf_cycles=1080, perf_macs=7840, perf_stall=28
+    -> Tiles launched=7, Wgt fetches=7, Act fetches=7, Drains=1
+  [PASS] FC Layer (K=784 Reduction Splitting) completed successfully!
+
+  [TEST 3] Conv2 Spatial Sweep with Weight Residency: M=16, N=196, K=64
+    -> Layer finished: perf_cycles=1380, perf_macs=200704, perf_stall=52
+    -> Tiles launched=13, Wgt fetches=1, Act fetches=13, Drains=13
+  [PASS] Conv2 Spatial Sweep with Weight Residency completed successfully!
+
+  [TEST 4] Conv1 Partial Channels: M=8, N=32, K=25
+    -> Layer finished: perf_cycles=136, perf_macs=6400, perf_stall=8
+    -> Tiles launched=2, Wgt fetches=1, Act fetches=2, Drains=2
+  [PASS] Conv1 Partial Channels completed successfully!
+
+  [TEST 5] Non-Aligned 3D Edge Tiles: M=17, N=33, K=135
+    -> Layer finished: perf_cycles=1321, perf_macs=75735, perf_stall=48
+    -> Tiles launched=12, Wgt fetches=12, Act fetches=12, Drains=6
+  [PASS] Non-Aligned 3D Edge Tiles completed successfully!
+
+  [TEST 6] Error Handling (M=0 Invalid Dimension)
+  [PASS] Error handling verified: seq_err correctly asserted.
+
+  [TEST 7] Abort Mid-Execution
+  [PASS] Abort handling verified: sequencer cleanly returned to IDLE.
+
+  ALL 7 TESTS PASSED! (0 errors)
+  ```
+  - `iverilog`: 7/7 suites passed (0 errors)
+  - `verilator 5.050`: 7/7 suites passed (0 errors)
+
+- **Yosys Synthesis & Latch-Free Audit:**
+  - Netlist check: `select -assert-count 0 t:$_DLATCH_*` passed. Exactly **0 latches inferred**.
+  - Total flip-flops: **639 DFFs** (state register, coordinate registers, tile descriptors, performance counters).
+
+- **Waveforms Generated:**
+  - `sim_output/tb_npu_sequencer.vcd` (477 KB) — Viewable via `./scripts/view_wave.sh seq`.
+
+
