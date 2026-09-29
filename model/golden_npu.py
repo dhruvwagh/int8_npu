@@ -22,7 +22,7 @@ from typing import List, Optional
 
 import numpy as np
 
-from model.golden_epilogue import epilogue_scalar
+from model.golden_epilogue import epilogue_vector
 
 ARR = 16          # ARR_M == ARR_N
 WORD_B = 16       # bytes per 128-bit memory word
@@ -107,14 +107,10 @@ def layer_golden(A: np.ndarray, B: np.ndarray, bias: np.ndarray, cfg: LayerCfg) 
     bp = np.zeros(Mp, dtype=np.int64)
     bp[: cfg.M] = bias
     acc = wrap32(Ap @ B.astype(np.int64))
-    out = np.zeros((Mp, cfg.N), dtype=np.int64)
-    for m in range(Mp):
-        for n in range(cfg.N):
-            out[m, n] = epilogue_scalar(
-                int(acc[m, n]), int(bp[m]), cfg.bias_en, cfg.rq_mult, cfg.rq_shift,
-                cfg.relu_en, cfg.signed_act)
-    # Hardware stores the low byte; unsigned mode values 128..255 wrap in int8 view
-    return (out & 0xFF).astype(np.uint8).view(np.int8)
+    out = epilogue_vector(acc, bp[:, None], cfg.bias_en, cfg.rq_mult, cfg.rq_shift,
+                          cfg.relu_en, cfg.signed_act)
+    # Hardware stores the low byte; view unsigned-mode results as raw int8 bytes
+    return out.view(np.int8)
 
 
 def choose_requant(acc_absmax: int, target: int = 100, shift: int = 24):

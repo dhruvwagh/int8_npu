@@ -70,26 +70,35 @@ def epilogue_vector(
     signed_act: bool = True
 ) -> np.ndarray:
     """
-    Vectorized epilogue across an array of accumulators.
+    Vectorized epilogue, bit-exact with epilogue_scalar.
+    bias_vec broadcasts against acc_vec (e.g. shape (M, 1) for per-row bias).
+    Uses int64 when the product provably fits, else falls back to the scalar path.
     """
-    acc_flat = np.asarray(acc_vec, dtype=np.int64).flatten()
+    acc = np.asarray(acc_vec, dtype=np.int64)
     if bias_vec is not None and bias_en:
-        bias_flat = np.asarray(bias_vec, dtype=np.int64).flatten()
+        val = acc + np.asarray(bias_vec, dtype=np.int64)
     else:
-        bias_flat = np.zeros_like(acc_flat)
+        val = acc.copy()
 
-    out = np.zeros(len(acc_flat), dtype=np.int8 if signed_act else np.uint8)
-    for i in range(len(acc_flat)):
-        out[i] = epilogue_scalar(
-            acc32=int(acc_flat[i]),
-            bias=int(bias_flat[i]),
-            bias_en=bias_en,
-            rq_mult=rq_mult,
-            rq_shift=rq_shift,
-            relu_en=relu_en,
-            signed_act=signed_act
-        )
-    return out.reshape(acc_vec.shape)
+    # |val| <= 2^33 always; the product fits int64 only if |val * mult| < 2^62
+    if val.size and int(np.abs(val).max()) * abs(int(rq_mult)) >= (1 << 62):
+        flat = val.flatten()
+        out = [epilogue_scalar(int(v), 0, False, rq_mult, rq_shift, relu_en, signed_act) for v in flat]
+        return np.array(out, dtype=np.int64).reshape(val.shape).astype(
+            np.int8 if signed_act else np.uint8)
+
+    prod = val * np.int64(rq_mult)
+    if rq_shift > 0:
+        half = np.int64(1 << (rq_shift - 1))
+        mag = (np.abs(prod) + half) >> rq_shift
+        shifted = np.where(prod >= 0, mag, -mag)
+    else:
+        shifted = prod
+    if relu_en:
+        shifted = np.maximum(shifted, 0)
+    if signed_act:
+        return np.clip(shifted, -128, 127).astype(np.int8)
+    return np.clip(shifted, 0, 255).astype(np.uint8)
 
 
 def generate_epilogue_test_suite(num_random: int = 500, seed: int = 42):

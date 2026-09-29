@@ -653,3 +653,59 @@ The sequencer runs fetch → compute → drain strictly in series, so the ping-p
 - **M3:** "12,288 DFFs (matches SPEC Section 6)" — SPEC §6 counts only accumulators (8,192). 12,288 includes the 8-bit `a_out`/`b_out` pass-through registers.
 - **M5:** the sequencer test verified control flow and counters only (emulated fetch/buffers/drain). The utilization numbers it reported (e.g. conv2 57%) assumed 2-cycle fetches and are superseded by the table above.
 - **M6:** the epilogue was described as 2-stage but was implemented as a single combinational stage; it is now actually 2-stage. The old Test 4 printed PASS without checking data; it now verifies both banks.
+
+---
+
+## 2026-09-29 — Milestone 8: Full MNIST CNN on the NPU, Bit-Exact
+
+### 1. Context & Objectives
+- **Target:** Train a CNN, quantize it to INT8, and run the whole network on `npu_top` in RTL simulation with every layer's output identical to an integer reference.
+- **Exit criterion:** All layers bit-exact for every simulated test image; NPU predictions identical to the golden int8 model.
+
+### 2. Network and quantization (`compiler/qnet.py`)
+- **Float model:** conv 1→8 (3×3, pad 1) → ReLU → maxpool 2 → conv 8→16 → ReLU → maxpool 2 → fc 784→10. Trained 3 epochs with Adam on the 60k training set.
+- **Post-training quantization:**
+  - Input pixels: `x_q = round(x · 127)`, range 0..127 (scale 1/127).
+  - Weights: per-tensor symmetric INT8 (`s_w = max|W| / 127`). Per-tensor, not per-channel, because the NPU has one `RQ_MULT` per layer.
+  - Bias: INT32 at scale `s_in · s_w`.
+  - Activations: per-tensor INT8; `s_out` from the 99.99th percentile over 2,000 calibration images.
+  - Requantization: `RQ_MULT / 2^RQ_SHIFT ≈ s_in · s_w / s_out`, using the largest shift ≤ 31 (the CSR field is 5 bits).
+- **Integer reference:** `int_forward()` uses the same bit-exact epilogue as the hardware golden model (`epilogue_vector`, now vectorized; cross-checked against the scalar model on 19,200 random cases, including the int64-overflow fallback).
+
+| Model | Test accuracy (10,000 images) |
+|---|---|
+| Float32 | 98.37% |
+| INT8 (integer-only) | 98.39% |
+
+| Layer | GEMM M×N×K | RQ_MULT | RQ_SHIFT |
+|---|---|---|---|
+| conv1 | 8×784×9 | 5,800,960 | 31 |
+| conv2 | 16×196×72 | 4,400,310 | 31 |
+| fc | 10×1×784 | 2,818,598 | 31 |
+
+### 3. RTL inference (`tb/integration/tb_mnist.sv`)
+- The testbench acts as the host driver. It does only data movement: im2col (3×3, pad 1) into the panel layout, 2×2 maxpool, and flatten. The NPU does every GEMM, bias, requantization and ReLU. This answers SPEC open questions 1 and 2 for v1: maxpool and im2col run on the host.
+- Shared harness `tb/integration/npu_tb_harness.svh` (DUT, memory model, AXI-Lite tasks, host byte access) now used by both `tb_npu_top` and `tb_mnist`.
+- Each image's conv1 (6,272 bytes), conv2 (3,136 bytes) and logits (10 bytes) are compared with the golden model.
+
+### 4. Results
+- **1,000 test images, Verilator, memory latency 4 + random 0–3, `mem_ready` 80%:** all bit-exact in every layer; NPU accuracy 98.70% = golden int8 accuracy on the same images. Wall time 25 s.
+- **10 images on iverilog and Verilator:** bit-exact, identical cycle counts on both simulators.
+
+Per-layer performance, ideal memory (1-cycle latency, no backpressure):
+
+| Layer | Cycles | Stall | Utilization |
+|---|---|---|---|
+| conv1 | 4,574 | 1,417 | 4.8% |
+| conv2 | 2,915 | 1,255 | 30.3% |
+| fc | 2,660 | 1,593 | 1.2% |
+| **Total** | **10,149 cycles/image** | | **11.2%** |
+
+At 50 MHz this is 203 µs per image (~4,900 images/s). The low utilization comes from the serial fetch → compute → drain schedule (M7 §5) plus the shapes themselves: conv1 fills only 8 of 16 rows with K=9, and fc is a matrix-vector product (N=1). These are the numbers milestone 13 will improve.
+
+### 5. How to run
+```
+python3 scripts/run_mnist_test.py -n 1000                          # Verilator, ideal memory
+python3 scripts/run_mnist_test.py -n 1000 --mem-lat 4 --mem-jit 3 --mem-rdy 80
+python3 scripts/run_mnist_test.py --simulator both -n 10
+```

@@ -94,9 +94,12 @@ def generate(seed, n_random, ideal_mem=False):
     return len(shapes)
 
 
-def run(cmd):
+def run(cmd, quiet=False):
+    """Run a command; compile steps (quiet=True) only print output on failure."""
     print(f"\n[RUN] {' '.join(cmd)}")
     res = subprocess.run(cmd, cwd=REPO_ROOT, capture_output=True, text=True)
+    if quiet and res.returncode == 0:
+        return 0
     out = (res.stdout or "") + (res.stderr or "")
     print(out.strip())
     return res.returncode
@@ -121,16 +124,16 @@ def main():
     ok = True
     if args.simulator in ("iverilog", "both"):
         print("\n== Icarus Verilog")
-        if run(["iverilog", "-g2012", "-o", "sim_output/tb_npu_top.vvp", "-s", "tb_npu_top",
-                "-c", FILELIST, TB]) != 0:
+        if run(["iverilog", "-g2012", "-Itb/integration", "-o", "sim_output/tb_npu_top.vvp", "-s", "tb_npu_top",
+                "-c", FILELIST, TB], quiet=True) != 0:
             sys.exit("[FAIL] iverilog compile")
         ok &= run(["vvp", "-n", "sim_output/tb_npu_top.vvp"] + plus) == 0
     if args.simulator in ("verilator", "both"):
         print("\n== Verilator")
         if run(["verilator", "--binary", "--timing", "-j", "0", "-O2",
                 "-Wno-TIMESCALEMOD", "-Wno-WIDTHEXPAND", "-Wno-WIDTHTRUNC", "-Wno-INITIALDLY",
-                "--top-module", "tb_npu_top", "-f", FILELIST, TB,
-                "-Mdir", "sim_output/verilator_top"]) != 0:
+                "--top-module", "tb_npu_top", "-Itb/integration", "-f", FILELIST, TB,
+                "-Mdir", "sim_output/verilator_top"], quiet=True) != 0:
             sys.exit("[FAIL] verilator compile")
         ok &= run(["./sim_output/verilator_top/Vtb_npu_top"] + plus) == 0
 
