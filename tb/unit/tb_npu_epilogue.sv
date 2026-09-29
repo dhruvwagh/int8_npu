@@ -23,6 +23,9 @@ module tb_npu_epilogue;
   localparam int DW     = ARR_M * DATA_W; // 128 bits
   localparam int WORDS  = 16;
   localparam int AW     = $clog2(WORDS);
+  localparam int EPI_LAT = 2;              // npu_epilogue pipeline latency (cycles)
+
+  logic signed [7:0] tile_gold_t3 [ARR_M][ARR_N];  // Test 3 tile, re-checked in Test 4
 
   logic clk;
   logic rst_n;
@@ -179,7 +182,7 @@ module tb_npu_epilogue;
         total_errors++;
       end else begin
         while (!$feof(fd)) begin
-          void'($fgets(line, fd));
+          if ($fgets(line, fd) == 0) break;
           // Skip comments and empty lines
           if (line.len() > 0 && line.substr(0, 0) != "#") begin
             if ($sscanf(line, "%h %h %d %h %h %d %d %h",
@@ -200,8 +203,8 @@ module tb_npu_epilogue;
               epi_in_acc[31:0]  <= $signed(v_acc32);
               epi_in_bias[31:0] <= $signed(v_bias32);
 
-              // Capture output after 1 cycle latency
-              @(posedge clk);
+              // Capture output after EPI_LAT cycles
+              repeat (EPI_LAT) @(posedge clk);
               #1;
               if (epi_out_data[7:0] !== $signed(v_exp8)) begin
                 $display("[FAIL] Vec %0d: Acc=0x%08h, Bias=0x%08h (en=%0d), Mult=0x%08h, Shift=%0d, ReLU=%0d -> Exp=0x%02h (%0d), Got=0x%02h (%0d)",
@@ -256,7 +259,7 @@ module tb_npu_epilogue;
         exp_lane[m]             = sum_val[7:0];
       end
 
-      @(posedge clk);
+      repeat (EPI_LAT) @(posedge clk);
       #1;
       if (!epi_out_valid || epi_out_col_idx !== 4'd5) begin
         $display("[FAIL] Output valid or col_idx mismatch!");
@@ -278,7 +281,6 @@ module tb_npu_epilogue;
     test_count++;
     $display("\n[TEST %0d] Full 16x16 Tile Drain into Output Staging Buffer (npu_obuf)", test_count);
     begin
-      logic signed [7:0] tile_gold [ARR_M][ARR_N];
 
       // Configuration: Requantize by 2 (shift=1) with ReLU enabled
       @(posedge clk);
@@ -307,7 +309,7 @@ module tb_npu_epilogue;
           if (rnd < 0) rnd = 0;
           // Saturation
           if (rnd > 127) rnd = 127;
-          tile_gold[m][j] = rnd[7:0];
+          tile_gold_t3[m][j] = rnd[7:0];
 
           epi_in_acc[m*32 +: 32]  <= a_val;
           epi_in_bias[m*32 +: 32] <= b_val;
@@ -317,8 +319,8 @@ module tb_npu_epilogue;
       @(posedge clk);
       epi_in_valid <= 1'b0;
 
-      // Allow 1 cycle for the last word (col 15) to register into npu_obuf
-      @(posedge clk);
+      // Allow EPI_LAT cycles for the last word (col 15) to register into npu_obuf
+      repeat (EPI_LAT) @(posedge clk);
       #1;
 
       // Bank Swap: Bank 1 becomes Read Bank for DMA readback
@@ -335,7 +337,7 @@ module tb_npu_epilogue;
         @(posedge clk);
         #1;
         for (int m = 0; m < ARR_M; m++) begin
-          check_byte("npu_obuf Readback", m, obuf_rd_data[m*8 +: 8], tile_gold[m][j]);
+          check_byte("npu_obuf Readback", m, obuf_rd_data[m*8 +: 8], tile_gold_t3[m][j]);
         end
       end
 
@@ -350,27 +352,62 @@ module tb_npu_epilogue;
     test_count++;
     $display("\n[TEST %0d] Double-Buffered Concurrent Drain & Readback (Zero Contention)", test_count);
     begin
-      // Tile 1 is now in Bank 1 (being read by DMA)
-      // Concurrently, drain Tile 2 into Bank 0!
-      for (int j = 0; j < 8; j++) begin
+      // Tile 1 is now in Bank 1 (read side). Concurrently drain Tile 2 (all 42s)
+      // into Bank 0 while reading Tile 1 back, and check neither is corrupted.
+      int t4_errors = 0;
+      for (int j = 0; j < ARR_N; j++) begin
         @(posedge clk);
-        // DMA Read from Bank 1
         obuf_rd_en   <= 1'b1;
         obuf_rd_addr <= j[AW-1:0];
 
-        // Epilogue Write to Bank 0
         epi_in_valid   <= 1'b1;
         epi_in_col_idx <= j[$clog2(ARR_N)-1:0];
         for (int m = 0; m < ARR_M; m++) begin
           epi_in_acc[m*32 +: 32]  <= 32'sd42;
           epi_in_bias[m*32 +: 32] <= 32'sd0;
         end
+
+        // Read data for the address issued last cycle
+        if (j > 0) begin
+          #1;
+          for (int m = 0; m < ARR_M; m++) begin
+            if (obuf_rd_data[m*8 +: 8] !== tile_gold_t3[m][j-1]) t4_errors++;
+          end
+        end
+      end
+      @(posedge clk);
+      obuf_rd_en   <= 1'b0;
+      epi_in_valid <= 1'b0;
+      #1;
+      for (int m = 0; m < ARR_M; m++) begin
+        if (obuf_rd_data[m*8 +: 8] !== tile_gold_t3[m][ARR_N-1]) t4_errors++;
       end
 
+      // Let Tile 2 finish, swap, and read it back: every byte must be 42 >> 1 = 21
+      repeat (EPI_LAT) @(posedge clk);
       @(posedge clk);
-      epi_in_valid <= 1'b0;
-      obuf_rd_en   <= 1'b0;
-      $display("[PASS] Concurrent read/write completed with zero port contention.");
+      obuf_swap <= 1'b1;
+      @(posedge clk);
+      obuf_swap <= 1'b0;
+      for (int j = 0; j < ARR_N; j++) begin
+        @(posedge clk);
+        obuf_rd_en   <= 1'b1;
+        obuf_rd_addr <= j[AW-1:0];
+        @(posedge clk);
+        #1;
+        for (int m = 0; m < ARR_M; m++) begin
+          if (obuf_rd_data[m*8 +: 8] !== 8'sd21) t4_errors++;
+        end
+      end
+      @(posedge clk);
+      obuf_rd_en <= 1'b0;
+
+      if (t4_errors == 0) begin
+        $display("[PASS] Concurrent read/write: both tiles intact, zero port contention.");
+      end else begin
+        $display("[FAIL] Double-buffer isolation: %0d byte mismatches", t4_errors);
+        total_errors += t4_errors;
+      end
     end
 
     // ========================================================================

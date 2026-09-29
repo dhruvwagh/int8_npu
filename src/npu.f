@@ -1,0 +1,16 @@
+src/npu_pkg.sv
+src/pe/npu_pe.sv
+src/array/npu_skew.sv
+src/array/npu_array.sv
+src/array/npu_drain.sv
+src/buffer/npu_sram.sv
+src/buffer/npu_buf_act.sv
+src/buffer/npu_buf_wgt.sv
+src/ctrl/npu_fetch.sv
+src/ctrl/npu_sequencer.sv
+src/ctrl/npu_mem_arb.sv
+src/ctrl/npu_wb.sv
+src/ctrl/npu_csr.sv
+src/epilogue/npu_epilogue.sv
+src/epilogue/npu_obuf.sv
+src/npu_top.sv

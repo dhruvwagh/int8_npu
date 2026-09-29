@@ -1,0 +1,31 @@
+
+19. Printing statistics.
+
+=== npu_top ===
+
+        +----------Local Count, excluding submodules.
+        | 
+   406219 wires
+   485012 wire bits
+     4379 public wires
+    82819 public wire bits
+       27 ports
+      393 port bits
+   431136 cells
+   142055   $_ANDNOT_
+    24948   $_AND_
+       33   $_DFFE_PN0N_
+    26156   $_DFFE_PN0P_
+        3   $_DFFE_PN1P_
+       51   $_DFF_PN0_
+    22655   $_MUX_
+     4450   $_NAND_
+    23589   $_NOR_
+    15107   $_NOT_
+    15394   $_ORNOT_
+    52691   $_OR_
+    32309   $_XNOR_
+    71419   $_XOR_
+      270   $scopeinfo
+        6   npu_sram
+

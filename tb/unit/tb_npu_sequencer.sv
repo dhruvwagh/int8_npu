@@ -62,6 +62,12 @@ module tb_npu_sequencer;
   logic              fetch_act_busy;
   logic              fetch_act_done;
 
+  // Bias Fetch Interface
+  logic              fetch_bias_start;
+  logic [ADDR_W-1:0] fetch_bias_base_addr;
+  logic              fetch_bias_busy;
+  logic              fetch_bias_done;
+
   // Buffer Swap & Bank Tracking
   logic              wgt_buf_swap;
   logic              act_buf_swap;
@@ -80,6 +86,9 @@ module tb_npu_sequencer;
   logic              drain_start;
   logic              drain_busy;
   logic              drain_done;
+  logic              drain_ready;
+  logic [ADDR_W-1:0] drain_c_addr;
+  logic [7:0]        drain_n_len;
 
   // Tile Descriptor & Masks
   logic              tile_valid;
@@ -114,6 +123,7 @@ module tb_npu_sequencer;
     .perf_cycles         (perf_cycles),
     .perf_macs           (perf_macs),
     .perf_stall          (perf_stall),
+    .perf_clr            (1'b0),
     .fetch_wgt_start     (fetch_wgt_start),
     .fetch_wgt_base_addr (fetch_wgt_base_addr),
     .fetch_wgt_words     (fetch_wgt_words),
@@ -124,6 +134,10 @@ module tb_npu_sequencer;
     .fetch_act_words     (fetch_act_words),
     .fetch_act_busy      (fetch_act_busy),
     .fetch_act_done      (fetch_act_done),
+    .fetch_bias_start    (fetch_bias_start),
+    .fetch_bias_base_addr(fetch_bias_base_addr),
+    .fetch_bias_busy     (fetch_bias_busy),
+    .fetch_bias_done     (fetch_bias_done),
     .wgt_buf_swap        (wgt_buf_swap),
     .act_buf_swap        (act_buf_swap),
     .wgt_buf_cur_bank    (wgt_buf_cur_bank),
@@ -135,8 +149,10 @@ module tb_npu_sequencer;
     .array_en            (array_en),
     .clr_acc             (clr_acc),
     .drain_start         (drain_start),
-    .drain_busy          (drain_busy),
     .drain_done          (drain_done),
+    .drain_ready         (drain_ready),
+    .drain_c_addr        (drain_c_addr),
+    .drain_n_len         (drain_n_len),
     .tile_valid          (tile_valid),
     .tile_desc           (tile_desc),
     .active_m_mask       (active_m_mask),
@@ -199,6 +215,43 @@ module tb_npu_sequencer;
     end
   end
 
+  // Bias fetch emulator (completes in 2 cycles)
+  int bias_fetch_timer;
+  always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+      fetch_bias_busy  <= 1'b0;
+      fetch_bias_done  <= 1'b0;
+      bias_fetch_timer <= 0;
+    end else begin
+      fetch_bias_done <= 1'b0;
+      if (fetch_bias_start) begin
+        fetch_bias_busy  <= 1'b1;
+        bias_fetch_timer <= 2;
+      end else if (fetch_bias_busy) begin
+        if (bias_fetch_timer > 1) begin
+          bias_fetch_timer <= bias_fetch_timer - 1;
+        end else begin
+          fetch_bias_busy <= 1'b0;
+          fetch_bias_done <= 1'b1;
+        end
+      end
+    end
+  end
+
+  // Output path is free again once the drained tile has been "written back"
+  // (emulated as drain + ARR_N writeback cycles)
+  int wb_timer;
+  assign drain_ready = !drain_busy && (wb_timer == 0);
+  always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+      wb_timer <= 0;
+    end else if (drain_done) begin
+      wb_timer <= ARR_N;
+    end else if (wb_timer > 0) begin
+      wb_timer <= wb_timer - 1;
+    end
+  end
+
   // Buffer bank flip-flops
   always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
@@ -245,6 +298,7 @@ module tb_npu_sequencer;
   int act_fetches_issued;
   int clr_acc_count;
   int drain_start_count;
+  int bias_fetches_issued;
 
   always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
@@ -253,12 +307,14 @@ module tb_npu_sequencer;
       act_fetches_issued <= 0;
       clr_acc_count      <= 0;
       drain_start_count  <= 0;
+      bias_fetches_issued <= 0;
     end else begin
       if (tile_valid)      tiles_launched     <= tiles_launched + 1;
       if (fetch_wgt_start) wgt_fetches_issued <= wgt_fetches_issued + 1;
       if (fetch_act_start) act_fetches_issued <= act_fetches_issued + 1;
       if (clr_acc)         clr_acc_count      <= clr_acc_count + 1;
       if (drain_start)     drain_start_count  <= drain_start_count + 1;
+      if (fetch_bias_start) bias_fetches_issued <= bias_fetches_issued + 1;
     end
   end
 
@@ -281,6 +337,7 @@ module tb_npu_sequencer;
     act_fetches_issued = 0;
     clr_acc_count      = 0;
     drain_start_count  = 0;
+    bias_fetches_issued = 0;
 
     @(posedge clk);
     dim_m     <= m;
@@ -329,6 +386,12 @@ module tb_npu_sequencer;
     // Audit weight fetch count (verifying residency)
     if (wgt_fetches_issued !== expected_wgt_fetches) begin
       $display("[FAIL] Expected wgt_fetches=%0d, got %0d", expected_wgt_fetches, wgt_fetches_issued);
+      total_errors++;
+    end
+
+    // Audit bias fetch count: exactly one per M panel
+    if (bias_fetches_issued !== (m + ARR_M - 1) / ARR_M) begin
+      $display("[FAIL] Expected bias fetches=%0d, got %0d", (m + ARR_M - 1) / ARR_M, bias_fetches_issued);
       total_errors++;
     end
 

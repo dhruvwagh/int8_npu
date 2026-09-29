@@ -6,6 +6,16 @@
 //              - Supports long reduction splitting (K > K_TILE_MAX) with persistent accumulators
 //              - Manages double-buffering handshakes with npu_fetch, npu_buf, and npu_array
 //              - Hardware performance profiling: total cycles, MACs, stall cycles
+//
+// Tensor memory layout (packed by the host/compiler, see docs/SPEC.md):
+//   A (weights, M x K):     panel t = rows 16t..16t+15; word (t, k) holds
+//                           A[16t+r][k] in byte r.   addr = a_base + m0*K + k*16
+//   B (activations, K x N): panel u = cols 16u..16u+15; word (u, k) holds
+//                           B[k][16u+c] in byte c.   addr = b_base + n0*K + k*16
+//   Bias (int32 per M row): 4 words per M panel.     addr = bias_base + m0*4
+//   C (outputs, M x N):     word (t, n) holds C[16t+r][n] in byte r.
+//                                                    addr = c_base + m0*N + n*16
+// Panels are zero-padded to 16 rows/cols, so edge tiles need no special layout.
 // Author: Dhruv Wagh
 // ============================================================================
 
@@ -43,6 +53,8 @@ module npu_sequencer #(
   output logic [31:0]         perf_macs,       // Total active MAC operations executed
   output logic [31:0]         perf_stall,      // Total cycles stalled waiting for memory
 
+  input  logic                perf_clr,        // Clear perf counters (when idle)
+
   // Weight Fetch Engine Interface
   output logic                fetch_wgt_start,
   output logic [ADDR_W-1:0]   fetch_wgt_base_addr,
@@ -56,6 +68,12 @@ module npu_sequencer #(
   output logic [7:0]          fetch_act_words,
   input  logic                fetch_act_busy,
   input  logic                fetch_act_done,
+
+  // Bias Fetch Engine Interface (one 4-word fetch per M panel)
+  output logic                fetch_bias_start,
+  output logic [ADDR_W-1:0]   fetch_bias_base_addr,
+  input  logic                fetch_bias_busy,
+  input  logic                fetch_bias_done,
 
   // Ping-Pong Buffer Control
   output logic                wgt_buf_swap,
@@ -73,8 +91,10 @@ module npu_sequencer #(
   output logic                array_en,        // Skew and PE clock enable
   output logic                clr_acc,         // Pulse to clear accumulators at tile start
   output logic                drain_start,     // Pulse to snapshot accumulators
-  input  logic                drain_busy,      // Drain module is busy
   input  logic                drain_done,      // Drain module finished
+  input  logic                drain_ready,     // Output path free (previous tile written back)
+  output logic [ADDR_W-1:0]   drain_c_addr,    // Output address of the drained tile (valid with drain_start)
+  output logic [7:0]          drain_n_len,     // Valid output columns of the drained tile
 
   // Tile Descriptor & Masking Interface
   output logic                tile_valid,      // Pulse when a tile starts computing
@@ -83,7 +103,16 @@ module npu_sequencer #(
   output logic [ARR_N-1:0]    active_n_mask    // 1 for active cols, 0 for padded cols
 );
 
-  localparam int FILL_LATENCY = ARR_M + ARR_N - 1; // Skew + array latency to PE(15,15)
+  // Cycles array_en must stay high after the last buffer read address is issued:
+  // the last word leaves the SRAM one cycle later (1-cycle read latency) and then
+  // needs ARR_M-1 + ARR_N-1 hops to reach PE(ARR_M-1, ARR_N-1).
+  localparam int FILL_LATENCY = ARR_M + ARR_N - 2;
+  localparam int WORD_B       = ARR_M;            // Bytes per 128-bit panel word
+
+  // Panel layout packs one INT8 per array row/column into each memory word.
+  initial begin
+    if (ARR_M != ARR_N) $fatal(1, "npu_sequencer: panel layout assumes ARR_M == ARR_N");
+  end
 
   // --------------------------------------------------------------------------
   // Sequencer FSM States
@@ -97,6 +126,7 @@ module npu_sequencer #(
     S_COMPUTE_PRIME,
     S_COMPUTE_STREAM,
     S_COMPUTE_FILL,
+    S_DRAIN_REQ,
     S_DRAIN_WAIT,
     S_NEXT_TILE,
     S_DONE
@@ -119,6 +149,7 @@ module npu_sequencer #(
   // Fetch pending tracking
   logic        wgt_fetch_pending;
   logic        act_fetch_pending;
+  logic        bias_fetch_pending;
 
   // Execution counters
   logic [7:0]  comp_k_cnt;
@@ -186,6 +217,11 @@ module npu_sequencer #(
       fetch_act_start     <= 1'b0;
       fetch_act_base_addr <= '0;
       fetch_act_words     <= '0;
+      fetch_bias_start    <= 1'b0;
+      fetch_bias_base_addr<= '0;
+      bias_fetch_pending  <= 1'b0;
+      drain_c_addr        <= '0;
+      drain_n_len         <= '0;
       wgt_buf_swap        <= 1'b0;
       act_buf_swap        <= 1'b0;
       wgt_rd_en           <= 1'b0;
@@ -209,6 +245,7 @@ module npu_sequencer #(
       seq_done            <= 1'b0;
       fetch_wgt_start     <= 1'b0;
       fetch_act_start     <= 1'b0;
+      fetch_bias_start    <= 1'b0;
       wgt_buf_swap        <= 1'b0;
       act_buf_swap        <= 1'b0;
       wgt_rd_en           <= 1'b0;
@@ -219,12 +256,14 @@ module npu_sequencer #(
       tile_valid          <= 1'b0;
       wgt_fetch_pending   <= 1'b0;
       act_fetch_pending   <= 1'b0;
+      bias_fetch_pending  <= 1'b0;
     end else begin
       // Default single-cycle strobes
       seq_done        <= 1'b0;
       seq_err         <= 1'b0;
       fetch_wgt_start <= 1'b0;
       fetch_act_start <= 1'b0;
+      fetch_bias_start<= 1'b0;
       wgt_buf_swap    <= 1'b0;
       act_buf_swap    <= 1'b0;
       clr_acc         <= 1'b0;
@@ -238,6 +277,9 @@ module npu_sequencer #(
       if (fetch_act_done) begin
         act_fetch_pending <= 1'b0;
       end
+      if (fetch_bias_done) begin
+        bias_fetch_pending <= 1'b0;
+      end
 
       // Global performance cycle counter
       if (state != S_IDLE) begin
@@ -249,6 +291,11 @@ module npu_sequencer #(
         // IDLE: Wait for start command from CSR
         // --------------------------------------------------------------------
         S_IDLE: begin
+          if (perf_clr) begin
+            perf_cycles <= '0;
+            perf_macs   <= '0;
+            perf_stall  <= '0;
+          end
           if (seq_start) begin
             if (dim_m == 0 || dim_n == 0 || dim_k == 0) begin
               seq_err <= 1'b1;
@@ -274,6 +321,7 @@ module npu_sequencer #(
               wgt_resident      <= 1'b0;
               wgt_fetch_pending <= 1'b0;
               act_fetch_pending <= 1'b0;
+              bias_fetch_pending<= 1'b0;
 
               state             <= S_FETCH_WGT;
             end
@@ -293,9 +341,18 @@ module npu_sequencer #(
           if (!wgt_resident) begin
             fetch_wgt_start     <= 1'b1;
             wgt_fetch_pending   <= 1'b1;
-            // Byte address in tensor memory
-            fetch_wgt_base_addr <= reg_a_base + ((ADDR_W'(m0) * ADDR_W'(reg_k) + ADDR_W'(k0)) << 0);
+            // Word (m0/16, k0) of the A panel layout
+            fetch_wgt_base_addr <= reg_a_base + ADDR_W'(m0) * ADDR_W'(reg_k) + ADDR_W'(k0) * ADDR_W'(WORD_B);
             fetch_wgt_words     <= next_k_len;
+          end
+
+          // First visit to an M panel in either loop order: load its bias.
+          // Safe to overwrite: the previous tile's drain (the only bias reader)
+          // has completed before the sequencer reaches this state.
+          if (k0 == 0 && n0 == 0) begin
+            fetch_bias_start     <= 1'b1;
+            bias_fetch_pending   <= 1'b1;
+            fetch_bias_base_addr <= reg_bias_base + (ADDR_W'(m0) << 2);
           end
           state <= S_FETCH_ACT;
         end
@@ -312,7 +369,8 @@ module npu_sequencer #(
 
           fetch_act_start     <= 1'b1;
           act_fetch_pending   <= 1'b1;
-          fetch_act_base_addr <= reg_b_base + ((ADDR_W'(k0) * ADDR_W'(reg_n) + ADDR_W'(n0)) << 0);
+          // Word (n0/16, k0) of the B panel layout
+          fetch_act_base_addr <= reg_b_base + ADDR_W'(n0) * ADDR_W'(reg_k) + ADDR_W'(k0) * ADDR_W'(WORD_B);
           fetch_act_words     <= next_k_len;
           state               <= S_WAIT_FETCH;
         end
@@ -322,6 +380,7 @@ module npu_sequencer #(
         // --------------------------------------------------------------------
         S_WAIT_FETCH: begin
           if (act_fetch_pending || fetch_act_busy ||
+              bias_fetch_pending || fetch_bias_busy ||
               (!wgt_resident && (wgt_fetch_pending || fetch_wgt_busy))) begin
             perf_stall <= perf_stall + 1'b1;
           end else begin
@@ -405,9 +464,8 @@ module npu_sequencer #(
           if (fill_cnt >= 8'(FILL_LATENCY)) begin
             array_en <= 1'b0;
             if (cur_last_k) begin
-              // Final reduction step: trigger accumulator readout
-              drain_start <= 1'b1;
-              state       <= S_DRAIN_WAIT;
+              // Final reduction step: accumulator readout once the output path is free
+              state <= S_DRAIN_REQ;
             end else begin
               // Partial reduction: keep accumulators live, advance to next tile
               state <= S_NEXT_TILE;
@@ -416,12 +474,25 @@ module npu_sequencer #(
         end
 
         // --------------------------------------------------------------------
-        // DRAIN WAIT: Wait for column drain module to snapshot accumulators
+        // DRAIN REQ: Wait for the previous tile's writeback, then start drain
+        // --------------------------------------------------------------------
+        S_DRAIN_REQ: begin
+          if (drain_ready) begin
+            drain_start  <= 1'b1;
+            drain_c_addr <= reg_c_base + ADDR_W'(m0) * ADDR_W'(reg_n) + ADDR_W'(n0) * ADDR_W'(WORD_B);
+            drain_n_len  <= cur_n_len;
+            state        <= S_DRAIN_WAIT;
+          end else begin
+            perf_stall <= perf_stall + 1'b1;
+          end
+        end
+
+        // --------------------------------------------------------------------
+        // DRAIN WAIT: Wait for all columns to leave the array (bias is read
+        // during the drain, so the next M panel's bias fetch must wait)
         // --------------------------------------------------------------------
         S_DRAIN_WAIT: begin
-          // As soon as drain snapshots (drain_busy goes high then drops or drain_done),
-          // next tile can proceed.
-          if (drain_done || !drain_busy) begin
+          if (drain_done) begin
             state <= S_NEXT_TILE;
           end
         end
@@ -482,8 +553,11 @@ module npu_sequencer #(
         // DONE: Layer execution complete
         // --------------------------------------------------------------------
         S_DONE: begin
-          seq_done <= 1'b1;
-          state    <= S_IDLE;
+          // Wait for the final tile's writeback to reach memory
+          if (drain_ready) begin
+            seq_done <= 1'b1;
+            state    <= S_IDLE;
+          end
         end
 
         default: state <= S_IDLE;

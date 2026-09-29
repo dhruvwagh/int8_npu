@@ -45,6 +45,8 @@ package npu_pkg;
   localparam logic [7:0] CSR_PERF_CYCLES = 8'h30; // R:  Total execution cycles
   localparam logic [7:0] CSR_PERF_MACS   = 8'h34; // R:  MAC-cycles issued
   localparam logic [7:0] CSR_PERF_STALL  = 8'h38; // R:  Buffer stall cycles
+  localparam logic [7:0] CSR_HW_CFG      = 8'h3C; // R:  [7:0] ARR_M, [15:8] ARR_N,
+                                                  //     [23:16] K_TILE/8, [31:24] MEM_DW/8
 
   // Control and Status bit offsets
   localparam int CTRL_START_BIT     = 0;

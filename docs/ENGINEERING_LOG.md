@@ -600,3 +600,56 @@ Converting a 32-bit accumulated sum $A_{32}$ to an 8-bit quantized activation $Y
   - `sim_output/tb_npu_epilogue.vcd` (75 KB) — Viewable via `./scripts/view_wave.sh epi`.
 
 
+
+---
+
+## 2026-09-29 — Milestone 7: `npu_top` Integration, AXI4-Lite CSRs, Writeback, Epilogue Pipelining
+
+### 1. Context & Objectives
+- **Target:** Connect every block into `npu_top`, add the AXI4-Lite register block, memory arbiter and output writeback, and prove the whole tiled datapath bit-exact with real data.
+- **Exit criterion:** A CPU-less testbench programs a layer over AXI4-Lite, the NPU fetches operands from a memory model, and the complete memory image after the run matches the golden model exactly.
+
+### 2. What integration exposed
+Milestones 4–6 each passed in isolation, but the sequencer test (M5) emulated fetch, buffers and drain and only counted events. With real data flowing, these problems appeared:
+
+| Problem | Effect | Fix |
+|---|---|---|
+| Fetch addresses were `a_base + m0*K + k0` (bytes), i.e. one weight row | Each buffer word must hold one k-step across 16 channels; data would be wrong for every tile except N=16 activations | Defined a panel memory layout (SPEC §9); addresses are now `base + m0*K + k0*16` |
+| Buffer read data held its last word after the stream ended | Array would keep accumulating the last k-step for the 30 fill cycles | Operands are gated to zero unless a valid read beat is present |
+| No writeback engine, no bias loading | Outputs never reached memory; bias input was unconnected | Added `npu_wb` and a bias fetch (4 words per M panel) |
+| `clr_acc` issued in the same cycle as the first read address | Harmless today because the operand at that cycle is zero, but wrong for back-to-back tile streaming | Clear delayed one cycle to align with SRAM read latency |
+| Epilogue was one combinational stage (16 × 33×32 multiply + 65-bit round) | Likely critical path | Split into 2 stages: bias + multiply, then round/ReLU/saturate |
+
+### 3. New and changed RTL
+- **`npu_top.sv`** — full datapath. Array rows = output channels (fed from the weight buffer), columns = output positions (activation buffer).
+- **`npu_csr.sv`** — AXI4-Lite slave; AW/W accepted in any order; SLVERR on unmapped/read-only writes; sticky `done`/`err`; new read-only `HW_CFG` (0x3C).
+- **`npu_mem_arb.sv`** — one shared 128-bit memory port; fixed priority (writeback > weights > activations > bias); 8-deep tag FIFO routes in-order read responses back to their requester.
+- **`npu_wb.sv`** — streams a drained tile from the obuf read bank to memory at 1 word/cycle with a 2-entry skid FIFO for backpressure.
+- **`npu_sequencer.sv`** — panel addressing, bias fetch on first visit to an M panel, new `S_DRAIN_REQ` state that waits for the previous tile's writeback, `S_DONE` waits for the final writeback, `perf_clr`. `FILL_LATENCY` is now derived: `ARR_M + ARR_N - 2` cycles after the last read address.
+- **`npu_epilogue.sv`** — 2-stage pipeline (latency 2, throughput 1 column/cycle).
+
+### 4. Verification
+- **`tb/integration/tb_npu_top.sv`** — AXI4-Lite master (randomised AW/W ordering), memory model with configurable latency, random jitter and random `mem_ready` backpressure. After each layer the **entire memory image** is compared with the golden image; the output region is pre-filled with a poison byte and followed by a guard word, so missed writes and overruns fail.
+- **`model/golden_npu.py`** — packing to the panel layout and bit-exact layer reference (reuses `golden_epilogue.epilogue_scalar`).
+- **Directed layers:** full tile; MNIST conv1 (8×784×9), conv2 (16×196×72), fc (10×1×784, K split with N=1); K split with N>16 (20×40×300); 1×1×1; K = K_TILE; edges in all three dims (17×33×129); saturating requant; unsigned output mode. Plus constrained-random shapes (M, N ≤ 48, K ≤ 300).
+- **Results:** 30/30 layers bit-exact on iverilog and Verilator; 5 extra seeds × 110 layers on Verilator, all bit-exact. CSR readback, HW_CFG, SLVERR and M=0 error tests pass. All M1–M6 unit suites still pass.
+- **Mutation checks** (to confirm the testbench can fail): fill latency one cycle short → caught; weight address missing the k0 term → caught. Clear one cycle early → *not* observable in the current serial schedule (see table above); a directed test for it will come with back-to-back streaming.
+
+### 5. Baseline performance (ideal memory: 1-cycle latency, no backpressure)
+
+| Layer | Cycles | Stall cycles | Utilization |
+|---|---|---|---|
+| conv1 8×784×9 | 4,574 | 1,417 | 4.8% |
+| conv2 16×196×72 | 2,915 | 1,255 | 30.3% |
+| fc 10×1×784 | 2,660 | 1,593 | 1.2% |
+
+The sequencer runs fetch → compute → drain strictly in series, so the ping-pong buffers never actually overlap fetch with compute. This is the baseline for the architecture work in milestone 13.
+
+### 6. Synthesis sanity (generic Yosys, `synth -flatten`, SRAMs blackboxed)
+- 0 latches; 6 `npu_sram` macros; **26,243 flip-flops**.
+- Largest contributors: PE accumulators + pass-through registers 12,288; **drain shadow registers 8,192** (a full copy of the accumulators, so the array can start the next tile during drain); skew triangles ~1,950; epilogue stage 1 ~1,040. The drain shadow is a candidate for area optimisation.
+
+### 7. Corrections to earlier entries
+- **M3:** "12,288 DFFs (matches SPEC Section 6)" — SPEC §6 counts only accumulators (8,192). 12,288 includes the 8-bit `a_out`/`b_out` pass-through registers.
+- **M5:** the sequencer test verified control flow and counters only (emulated fetch/buffers/drain). The utilization numbers it reported (e.g. conv2 57%) assumed 2-cycle fetches and are superseded by the table above.
+- **M6:** the epilogue was described as 2-stage but was implemented as a single combinational stage; it is now actually 2-stage. The old Test 4 printed PASS without checking data; it now verifies both banks.

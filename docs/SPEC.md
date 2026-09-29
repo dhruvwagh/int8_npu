@@ -1,11 +1,15 @@
 # INT8 NPU — Design Specification
 
 A quantized matrix-multiply accelerator for CNN inference, in SystemVerilog,
-taken to synthesis and static timing signoff on SkyWater 130 nm.
+taken to synthesis and static timing signoff on SkyWater 130 nm, prototyped on
+FPGA, and characterised with a validated performance model.
 
 **Author:** Dhruv Wagh
 **Started:** 2026-09-28
-**Scope:** RTL + verification + synthesis + STA. No place-and-route.
+**Scope:** RTL + verification + ASIC synthesis/STA + FPGA prototype + performance
+modelling. No ASIC place-and-route or tapeout.
+
+**Target roles:** RTL design first; also architecture/performance and FPGA/prototyping.
 
 ---
 
@@ -25,8 +29,13 @@ The project is done when all of these hold:
 4. OpenSTA closes setup and hold at a stated clock, with the critical path
    identified and root-caused.
 5. A **per-layer utilization and roofline analysis** explaining where cycles go.
+6. A Python **cycle-level performance model** that predicts RTL cycle counts
+   (checked against the hardware perf counters), used for design-space
+   exploration over array size, `MEM_DW`, `K_TILE` and `ACC_W`.
+7. The design **runs on an FPGA**, with Fmax and resource use (LUT/FF/DSP/BRAM)
+   reported next to the ASIC numbers.
 
-Criterion 5 is the deliverable that differentiates this from a tutorial project.
+Criteria 5 and 6 are what differentiate this from a tutorial project.
 
 ---
 
@@ -133,7 +142,9 @@ npu_top.sv
 │   └── npu_pe.sv         INT8 MAC + ACC_W accumulator + pass-through registers
 ├── npu_drain.sv          column-by-column accumulator readout
 ├── npu_epilogue.sv       bias add + requantize + ReLU + saturate to INT8
-├── npu_obuf.sv           output staging, writeback to tensor memory
+├── npu_obuf.sv           ping-pong output staging buffer
+├── npu_wb.sv             writeback engine: obuf -> tensor memory
+├── npu_mem_arb.sv        shares the one tensor-memory port (wb, weights, acts, bias)
 └── npu_sram.sv           behavioral for sim / blackbox for synth
 ```
 
@@ -234,7 +245,12 @@ registers) and is safe for K <= 128. Worth measuring and mentioning.
 | 0x2C | `FLAGS` | RW | bit0 `relu_en`, bit1 `bias_en`, bit2 `signed_act` |
 | 0x30 | `PERF_CYCLES` | R | total cycles for the layer |
 | 0x34 | `PERF_MACS` | R | MAC-cycles actually issued |
-| 0x38 | `PERF_STALL` | R | cycles stalled on buffer fill |
+| 0x38 | `PERF_STALL` | R | cycles stalled on buffer fill or output writeback |
+| 0x3C | `HW_CFG` | R | `[7:0]` ARR_M, `[15:8]` ARR_N, `[23:16]` K_TILE/8, `[31:24]` MEM_DW/8 |
+
+CTRL bits are self-clearing pulses; `start` is ignored while busy. STATUS `done`
+and `err` are sticky until the next `start`; `irq` mirrors `done`. Unmapped or
+read-only addresses return SLVERR on write, unmapped addresses SLVERR on read.
 
 `PERF_MACS / (PERF_CYCLES * ARR_M * ARR_N)` gives per-layer utilization directly
 in hardware. Build these counters in from day one — they are how section 4's
@@ -262,7 +278,31 @@ from it, and make the RTL match — not the other way around.
 
 ---
 
-## 9. Compiler IR
+## 9. Tensor memory layout (hardware/compiler contract)
+
+All tensors live in one byte-addressed memory with 16-byte (128-bit) words.
+Byte `r` of a word is bits `[8r+7:8r]`. Matrices are stored as 16-wide
+**panels** so that one memory word is exactly one array beat:
+
+| Tensor | Shape | Word contents | Byte address of word |
+|---|---|---|---|
+| A (weights) | M x K | `A[16t + r][k]`, r = 0..15 | `a_base + (t*K + k)*16` |
+| B (activations) | K x N | `B[k][16u + c]`, c = 0..15 | `b_base + (u*K + k)*16` |
+| bias | M (int32) | 4 channels per word, little-endian | `bias_base + m*4` |
+| C (outputs) | M x N | `C[16t + r][n]`, r = 0..15 | `c_base + (t*N + n)*16` |
+
+`t` is the M panel (`m0/16`), `u` the N panel (`n0/16`). Panels are zero-padded
+to 16 rows/columns, so edge tiles need no special addressing. Outputs are
+written for all 16 rows of a panel (padded rows included). Packing lives in
+`model/golden_npu.py`.
+
+A tile's K slice is `k_len` consecutive words for both operands, so every fetch
+is one contiguous burst. Note C comes out in the same panel-major form as A,
+so a following layer needs im2col repacking on the host (v1).
+
+---
+
+## 10. Compiler IR
 
 Python, `compiler/`. Four stages:
 
@@ -317,7 +357,7 @@ and cost you the 13x traffic reduction on conv2.
 
 ---
 
-## 10. Verification plan
+## 11. Verification plan
 
 Three layers, built in this order:
 
@@ -347,7 +387,7 @@ is coverage-driven randomised verification, not the specific framework.
 
 ---
 
-## 11. Milestones
+## 12. Milestones
 
 Roughly 8 weeks part-time. Each has a hard exit criterion.
 
@@ -359,11 +399,13 @@ Roughly 8 weeks part-time. Each has a hard exit criterion.
 | 4 | `npu_sram`, ping-pong buffers, `npu_fetch` | Buffer swap overlaps fetch with compute, zero bubbles in steady state | 1 wk |
 | 5 | `npu_sequencer` — full M/N/K tiling | Arbitrary M/N/K including K > K_TILE and partial edge tiles | 1 wk |
 | 6 | `npu_epilogue` + `npu_obuf` | Bias/requant/ReLU/saturate bit-exact vs golden across full range | 4 days |
-| 7 | `npu_csr` AXI-Lite + perf counters | CPU-less TB programs a layer and reads back correct utilization | 4 days |
-| 8 | Compiler: ONNX -> quantize -> tile -> descriptors | MNIST conv1 runs end-to-end, bit-exact | 1 wk |
-| 9 | Full network + SV coverage closure | All layers bit-exact; functional coverage closed | 1 wk |
-| 10 | Yosys synth + OpenSTA | Timing closed at stated clock, critical path root-caused, area broken out | 4 days |
-| 11 | `MEM_DW` sweep + roofline + utilization writeup | The two headline figures produced | 4 days |
+| 7 | `npu_csr` AXI-Lite, `npu_top` integration, epilogue pipelining | CPU-less TB programs a layer over AXI-Lite; tiled GEMM output with real data bit-exact vs golden | 1 wk |
+| 8 | MNIST flow: PyTorch train -> INT8 quantize -> im2col -> test vectors (Python script, no ONNX) | Full network runs in RTL, all layers bit-exact | 1 wk |
+| 9 | Constrained-random GEMM + SVA on key invariants | Random M/N/K sweep passes; assertions clean | 4 days |
+| 10 | ASIC: Yosys synth + OpenSTA on sky130 | Timing closed at stated clock, critical path root-caused and fixed, area broken out | 4 days |
+| 11 | FPGA: SRAM wrapper maps to BRAM, PEs to DSP/LUT, build + timing | Fmax and resource report; GEMM/MNIST run on board (or post-route sim if no board) | 1 wk |
+| 12 | Performance model + DSE | Model matches RTL perf counters per layer; sweeps over array size, `MEM_DW`, `K_TILE`, `ACC_W` | 1 wk |
+| 13 | Utilization improvements + writeup | At least one measured architectural fix (e.g. drain/fill overlap, prefetch); roofline and utilization figures | 4 days |
 
 Milestones 1-3 are the fun part and go fast. **Milestone 5 is where the real
 difficulty is** — tiling with partial edge tiles and K-splitting is where most
@@ -371,7 +413,7 @@ accelerator projects break. Budget more time there than feels necessary.
 
 ---
 
-## 12. Open questions
+## 13. Open questions
 
 1. Max pooling: software in v1, or a small hardware pooling unit in the epilogue?
 2. Does im2col happen in the compiler (simple, more memory traffic) or in the
@@ -380,3 +422,7 @@ accelerator projects break. Budget more time there than feels necessary.
 3. Target clock for STA — pick a number and design to it rather than discovering
    it. 50 MHz is a reasonable sky130 target for this structure.
 4. Cocotb or a UVM-lite SystemVerilog env for milestone 9?
+5. FPGA target: which board/part, and which toolchain (Vivado does not run on
+   macOS; Yosys + nextpnr supports Lattice ECP5/Gowin natively)? A 16x16 INT8
+   array needs 256 multipliers — may need DSP packing (2 INT8 MACs per DSP) or
+   a smaller `ARR_M`/`ARR_N` on a small part.
