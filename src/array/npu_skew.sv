@@ -15,11 +15,12 @@
 module npu_skew #(
   parameter int ARR_M  = 16,
   parameter int ARR_N  = 16,
-  parameter int DATA_W = 8
+  parameter int DATA_W = 8,
+  parameter bit HAS_EN = 1'b1          // 0: free-running shift registers
 ) (
   input  logic                                clk,
   input  logic                                rst_n,
-  input  logic                                en,         // Clock enable
+  input  logic                                en,         // Clock enable (HAS_EN only)
   input  logic                                clr_in,     // Clear pulse at tile cycle k=0
   input  logic signed [ARR_M*DATA_W-1:0]      a_in,
   input  logic signed [ARR_N*DATA_W-1:0]      b_in,
@@ -27,6 +28,8 @@ module npu_skew #(
   output logic signed [ARR_N*DATA_W-1:0]      b_skewed,
   output logic        [ARR_M*ARR_N-1:0]       clr_skewed
 );
+
+  wire en_eff = HAS_EN ? en : 1'b1;
 
   // --------------------------------------------------------------------------
   // Activation Input Skew (Row i delayed by i cycles)
@@ -43,7 +46,7 @@ module npu_skew #(
             for (int s = 0; s < i; s++) begin
               shift_reg[s] <= '0;
             end
-          end else if (en) begin
+          end else if (en_eff) begin
             shift_reg[0] <= a_row_in;
             for (int s = 1; s < i; s++) begin
               shift_reg[s] <= shift_reg[s-1];
@@ -70,7 +73,7 @@ module npu_skew #(
             for (int s = 0; s < j; s++) begin
               shift_reg[s] <= '0;
             end
-          end else if (en) begin
+          end else if (en_eff) begin
             shift_reg[0] <= b_col_in;
             for (int s = 1; s < j; s++) begin
               shift_reg[s] <= shift_reg[s-1];
@@ -94,7 +97,7 @@ module npu_skew #(
       always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
           clr_pipe <= '0;
-        end else if (en) begin
+        end else if (en_eff) begin
           clr_pipe[1] <= clr_in;
           for (int d = 2; d <= MAX_DELAY; d++) begin
             clr_pipe[d] <= clr_pipe[d-1];

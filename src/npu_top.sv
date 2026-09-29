@@ -265,14 +265,16 @@ module npu_top #(
   logic signed [ARR_M*DATA_W-1:0]      a_east_unused;
   logic signed [ARR_N*DATA_W-1:0]      b_south_unused;
 
-  npu_skew #(.ARR_M(ARR_M), .ARR_N(ARR_N), .DATA_W(DATA_W)) u_skew (
-    .clk, .rst_n, .en(array_en), .clr_in(clr_aligned),
+  // The skew and array free-run (HAS_EN = 0). Idle cycles feed zero operands,
+  // so accumulators hold (acc += 0) without a 12K-fanout enable net.
+  npu_skew #(.ARR_M(ARR_M), .ARR_N(ARR_N), .DATA_W(DATA_W), .HAS_EN(1'b0)) u_skew (
+    .clk, .rst_n, .en(1'b1), .clr_in(clr_aligned),
     .a_in(row_operands), .b_in(col_operands),
     .a_skewed, .b_skewed, .clr_skewed
   );
 
-  npu_array #(.ARR_M(ARR_M), .ARR_N(ARR_N), .ACC_W(ACC_W)) u_array (
-    .clk, .rst_n, .en(array_en), .clr(clr_skewed),
+  npu_array #(.ARR_M(ARR_M), .ARR_N(ARR_N), .ACC_W(ACC_W), .HAS_EN(1'b0)) u_array (
+    .clk, .rst_n, .en(1'b1), .clr(clr_skewed),
     .a_in(a_skewed), .b_in(b_skewed),
     .a_out(a_east_unused), .b_out(b_south_unused), .acc
   );
@@ -342,7 +344,7 @@ module npu_top #(
 
   // Debug-only outputs left unconnected at the top level
   logic _unused;
-  assign _unused = &{1'b0, tile_valid, tile_desc, drain_busy, obuf_cur_bank, arb_rsp_valid[0],
+  assign _unused = &{1'b0, tile_valid, tile_desc, drain_busy, obuf_cur_bank, arb_rsp_valid[0], array_en,
                      a_east_unused, b_south_unused, 1'b0};
 
 endmodule : npu_top

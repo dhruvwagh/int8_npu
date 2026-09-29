@@ -14,7 +14,8 @@
 module npu_array #(
   parameter int ARR_M = 16,
   parameter int ARR_N = 16,
-  parameter int ACC_W = 32
+  parameter int ACC_W = 32,
+  parameter bit HAS_EN = 1'b1          // 0: free-running PEs (see npu_pe)
 ) (
   input  logic                                clk,
   input  logic                                rst_n,
@@ -59,7 +60,8 @@ module npu_array #(
         wire signed [ACC_W-1:0] acc_pe;
 
         npu_pe #(
-          .ACC_W(ACC_W)
+          .ACC_W  (ACC_W),
+          .HAS_EN (HAS_EN)
         ) pe_inst (
           .clk   (clk),
           .rst_n (rst_n),

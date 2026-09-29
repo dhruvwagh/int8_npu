@@ -9,8 +9,7 @@ Workflow:
    - Test 3: Full 16x16 tile drain into npu_obuf
    - Test 4: Double-buffered concurrent drain & DMA readback
 3. Run Yosys synthesis audit:
-   - Verify npu_sram in npu_obuf is blackboxed (0 inferred memory DFFs)
-   - Verify npu_obuf has exactly 1 DFF (cur_bank) + 2 npu_sram macros
+   - Verify npu_obuf banks synthesize as register files (no SRAM macros, 0 latches)
    - Verify npu_epilogue synthesizes with 0 latches
 """
 
@@ -104,11 +103,12 @@ def main():
 
         # Audit npu_obuf
         yosys_script_obuf = """
+        read_liberty -lib pd/sram/sky130_sram_1kbyte_1rw1r_32x256_8_TT_1p8V_25C.lib
         read_verilog -sv src/buffer/npu_sram.sv src/epilogue/npu_obuf.sv
         hierarchy -top npu_obuf
-        synth
-        select -assert-count 1 t:$_DFFE_PN0P_
-        select -assert-count 2 t:npu_sram
+        synth -flatten
+        select -assert-count 0 t:sky130_sram_1kbyte_1rw1r_32x256_8
+        select -assert-count 0 t:$_DLATCH_*
         stat
         """
         cmd_obuf = ["yosys", "-p", yosys_script_obuf]
@@ -131,7 +131,7 @@ def main():
 
         print("\n==================================================================")
         print("  YOSYS SYNTHESIS AUDIT PASSED:")
-        print("  - npu_obuf: exactly 1 DFF (cur_bank) + 2 npu_sram blackbox macros")
+        print("  - npu_obuf: register-file banks (USE_MACRO=0), no SRAM macros, 0 latches")
         print("  - npu_epilogue: 0 latches, fully synthesized parallel SIMD datapath")
         print("==================================================================")
 

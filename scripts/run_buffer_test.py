@@ -8,8 +8,8 @@ Workflow:
    - Tests overlapped fetch and compute with ZERO steady-state bubbles
    - Tests weight-tile residency across multiple activation sweeps
 2. Run Yosys synthesis audit:
-   - Verify npu_sram is blackboxed (0 inferred DFFs from memory array)
-   - Verify npu_buf_act has exactly 1 DFF (cur_bank) + 2 npu_sram macros
+   - Verify npu_sram maps to OpenRAM macros (0 inferred DFFs from memory array)
+   - Verify npu_buf_act has exactly 1 DFF (cur_bank) + 8 sky130 SRAM macros
    - Verify npu_buf_wgt has exactly 1 DFF (cur_bank) + 2 npu_sram macros
    - Verify npu_fetch has clean control DFFs (~194 DFFs, 0 latches)
 """
@@ -94,11 +94,12 @@ def main():
 
         # Audit npu_buf_act
         yosys_script_act = """
+        read_liberty -lib pd/sram/sky130_sram_1kbyte_1rw1r_32x256_8_TT_1p8V_25C.lib
         read_verilog -sv src/buffer/npu_sram.sv src/buffer/npu_buf_act.sv
         hierarchy -top npu_buf_act
-        synth
+        synth -flatten
         select -assert-count 1 t:$_DFFE_PN0P_
-        select -assert-count 2 t:npu_sram
+        select -assert-count 8 t:sky130_sram_1kbyte_1rw1r_32x256_8
         stat
         """
         cmd_act = ["yosys", "-p", yosys_script_act]
@@ -121,8 +122,8 @@ def main():
 
         print("\n==================================================================")
         print("  YOSYS SYNTHESIS AUDIT PASSED:")
-        print("  - npu_sram is blackboxed (0 inferred DFFs from 8.5 KB memory array)")
-        print("  - npu_buf_act: exactly 1 DFF (cur_bank) + 2 npu_sram blackbox macros")
+        print("  - npu_sram maps to OpenRAM macros (0 inferred DFFs from the storage array)")
+        print("  - npu_buf_act: exactly 1 DFF (cur_bank) + 8 sky130 32x256 SRAM macros (2 banks x 4)")
         print("  - npu_fetch: 194 control DFFs, 0 latches")
         print("==================================================================")
 

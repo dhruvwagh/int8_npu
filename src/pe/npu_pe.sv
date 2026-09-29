@@ -3,6 +3,9 @@
 // Description: Output-stationary Processing Element (PE) for INT8 Systolic Array
 //              - Signed 8x8 multiply with ACC_W accumulator
 //              - Systolic forwarding registers (a_out, b_out)
+//              - HAS_EN = 0 removes the stall enable: the PE free-runs and the
+//                caller holds state by feeding zero operands (acc += 0). This
+//                removes a mux per flop and an array-wide high-fanout net.
 // Author: Dhruv Wagh
 // ============================================================================
 
@@ -12,11 +15,12 @@
 `timescale 1ns/1ps
 
 module npu_pe #(
-  parameter int ACC_W = 32
+  parameter int ACC_W  = 32,
+  parameter bit HAS_EN = 1'b1
 ) (
   input  logic                     clk,
   input  logic                     rst_n,
-  input  logic                     en,        // Advance computation and registers
+  input  logic                     en,        // Advance computation and registers (HAS_EN only)
   input  logic                     clr,       // Clear accumulator (new output tile)
   input  logic signed [7:0]        a_in,      // Activation input from west
   input  logic signed [7:0]        b_in,      // Weight input from north
@@ -33,6 +37,9 @@ module npu_pe #(
   logic signed [ACC_W-1:0] prod_ext;
   assign prod_ext = {{ (ACC_W-16){prod[15]} }, prod};
 
+  // Effective enable: constant 1 when the stall enable is compiled out
+  wire en_eff = HAS_EN ? en : 1'b1;
+
   // Sequential register updates
   always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
@@ -41,21 +48,21 @@ module npu_pe #(
       acc   <= '0;
     end else begin
       // Systolic forwarding registers advance only when enabled
-      if (en) begin
+      if (en_eff) begin
         a_out <= a_in;
         b_out <= b_in;
       end
 
       // Accumulator update logic
       if (clr) begin
-        if (en) begin
+        if (en_eff) begin
           // Start of new reduction tile with active operand pair
           acc <= prod_ext;
         end else begin
           // Synchronous clear while stalled / idle
           acc <= '0;
         end
-      end else if (en) begin
+      end else if (en_eff) begin
         // Normal accumulation step
         acc <= acc + prod_ext;
       end

@@ -1,7 +1,8 @@
 // ============================================================================
 // File: npu_obuf.sv
 // Description: Double-Buffered Output Staging Buffer (512 B total)
-//              - Wraps two npu_sram macros (each 16 words x 128 bits = 256 B)
+//              - Wraps two npu_sram banks (each 16 words x 128 bits = 256 B),
+//                synthesized as flip-flop register files (USE_MACRO = 0)
 //              - Bank A: Written by npu_epilogue during column drain (16 cycles)
 //              - Bank B: Concurrently read by DMA writeback engine to tensor memory
 //              - Instantaneous zero-bubble bank swap on `swap` strobe
@@ -97,9 +98,10 @@ module npu_obuf #(
   // SRAM Bank Instantiations
   // --------------------------------------------------------------------------
   npu_sram #(
-    .DW    (DW),
-    .WORDS (WORDS),
-    .AW    (AW)
+    .DW        (DW),
+    .WORDS     (WORDS),
+    .AW        (AW),
+    .USE_MACRO (1'b0)     // 256 B bank: register file, not a 1 KB macro
   ) u_obuf_bank0 (
     .clk   (clk),
     .csb   (1'b0),
@@ -112,9 +114,10 @@ module npu_obuf #(
   );
 
   npu_sram #(
-    .DW    (DW),
-    .WORDS (WORDS),
-    .AW    (AW)
+    .DW        (DW),
+    .WORDS     (WORDS),
+    .AW        (AW),
+    .USE_MACRO (1'b0)     // 256 B bank: register file, not a 1 KB macro
   ) u_obuf_bank1 (
     .clk   (clk),
     .csb   (1'b0),
