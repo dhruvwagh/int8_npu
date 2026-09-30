@@ -72,7 +72,6 @@ module npu_buf_act #(
       b1_re    = 1'b0;
       b1_raddr = '0;
 
-      rd_data  = b0_rdata;
     end else begin
       // Bank 1 is Compute Read
       b1_re    = rd_en;
@@ -88,9 +87,21 @@ module npu_buf_act #(
       b0_re    = 1'b0;
       b0_raddr = '0;
 
-      rd_data  = b1_rdata;
     end
   end
+
+  // Read data comes back one cycle after the read, so select it with the bank
+  // that was read, not the current bank. This keeps a swap issued right after
+  // the last read of a tile from returning the other bank's data.
+  logic rd_bank_q;
+  always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+      rd_bank_q <= 1'b0;
+    end else if (rd_en) begin
+      rd_bank_q <= cur_bank;
+    end
+  end
+  assign rd_data = rd_bank_q ? b1_rdata : b0_rdata;
 
   // --------------------------------------------------------------------------
   // SRAM Bank Instantiations

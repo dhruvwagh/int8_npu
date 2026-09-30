@@ -108,18 +108,17 @@ module npu_top #(
   logic              fetch_act_start, fetch_act_busy, fetch_act_done;
   logic [ADDR_W-1:0] fetch_act_base_addr;
   logic [7:0]        fetch_act_words;
-  logic              fetch_bias_start, fetch_bias_busy, fetch_bias_done;
+  logic              fetch_bias_start, fetch_bias_busy, fetch_bias_done, fetch_bias_slot;
   logic [ADDR_W-1:0] fetch_bias_base_addr;
   logic              wgt_buf_swap, act_buf_swap, wgt_cur_bank, act_cur_bank;
   logic              wgt_rd_en, act_rd_en;
   logic [KAW-1:0]    wgt_rd_addr, act_rd_addr;
-  logic              array_en, clr_acc, drain_start, drain_done, drain_ready;
+  logic              clr_acc, drain_start, drain_done, drain_ready, out_idle;
   logic [ADDR_W-1:0] drain_c_addr;
   logic [7:0]        drain_n_len;
+  logic              drain_bias_slot;
   logic [ARR_M-1:0]  active_m_mask;
   logic [ARR_N-1:0]  active_n_mask;
-  logic              tile_valid;
-  npu_pkg::tile_desc_t tile_desc;
 
   npu_sequencer #(
     .ARR_M(ARR_M), .ARR_N(ARR_N), .K_TILE_MAX(K_TILE_MAX),
@@ -131,19 +130,15 @@ module npu_top #(
     .seq_busy, .seq_done, .seq_err,
     .perf_cycles, .perf_macs, .perf_stall,
     .perf_clr(csr_perf_clr),
-    .fetch_wgt_start, .fetch_wgt_base_addr, .fetch_wgt_words,
-    .fetch_wgt_busy, .fetch_wgt_done,
-    .fetch_act_start, .fetch_act_base_addr, .fetch_act_words,
-    .fetch_act_busy, .fetch_act_done,
-    .fetch_bias_start, .fetch_bias_base_addr,
-    .fetch_bias_busy, .fetch_bias_done,
+    .fetch_wgt_start, .fetch_wgt_base_addr, .fetch_wgt_words, .fetch_wgt_done,
+    .fetch_act_start, .fetch_act_base_addr, .fetch_act_words, .fetch_act_done,
+    .fetch_bias_start, .fetch_bias_base_addr, .fetch_bias_slot, .fetch_bias_done,
     .wgt_buf_swap, .act_buf_swap,
-    .wgt_buf_cur_bank(wgt_cur_bank), .act_buf_cur_bank(act_cur_bank),
     .wgt_rd_en, .wgt_rd_addr, .act_rd_en, .act_rd_addr,
-    .array_en, .clr_acc, .drain_start, .drain_done, .drain_ready,
-    .drain_c_addr, .drain_n_len,
-    .tile_valid, .tile_desc,
-    .active_m_mask, .active_n_mask
+    .active_m_mask, .active_n_mask,
+    .clr_acc,
+    .drain_start, .drain_c_addr, .drain_n_len, .drain_bias_slot,
+    .drain_done, .drain_ready, .out_idle
   );
 
   // --------------------------------------------------------------------------
@@ -217,30 +212,41 @@ module npu_top #(
     .wr_en(act_buf_wr_en), .wr_addr(act_buf_wr_addr), .wr_data(act_buf_wr_data)
   );
 
-  // Per-output-channel bias for the current M panel (lane i at [32i +: 32])
-  logic [ARR_M*32-1:0] bias_regs;
+  // Per-output-channel bias, two slots (lane i at [32i +: 32]). The fetch
+  // side loads the next M panel's bias while the previous panel still drains.
+  logic [ARR_M*32-1:0] bias_regs [2];
+  logic                bias_wr_slot;
   always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
-      bias_regs <= '0;
-    end else if (bias_wr_en) begin
-      bias_regs[bias_wr_addr*MEM_DW +: MEM_DW] <= bias_wr_data;
+      bias_regs[0] <= '0;
+      bias_regs[1] <= '0;
+      bias_wr_slot <= 1'b0;
+    end else begin
+      if (fetch_bias_start) bias_wr_slot <= fetch_bias_slot;
+      if (bias_wr_en) bias_regs[bias_wr_slot][bias_wr_addr*MEM_DW +: MEM_DW] <= bias_wr_data;
     end
   end
 
   // --------------------------------------------------------------------------
   // Operand alignment: buffer reads have 1-cycle latency, so the data valid
-  // flag and the accumulator clear are delayed by one cycle to line up with
-  // the first word. Outside a valid beat the array is fed zeros, which is what
-  // flushes the systolic pipeline during fill.
+  // flag, the tile masks and the clear/capture wave are delayed by one cycle to
+  // line up with the data. Outside a valid beat the array is fed zeros, so a
+  // wave carries zero operands and idle cycles leave accumulators unchanged.
   // --------------------------------------------------------------------------
-  logic operand_valid, clr_aligned;
+  logic             operand_valid, clr_aligned;
+  logic [ARR_M-1:0] m_mask_q;
+  logic [ARR_N-1:0] n_mask_q;
   always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
       operand_valid <= 1'b0;
       clr_aligned   <= 1'b0;
+      m_mask_q      <= '0;
+      n_mask_q      <= '0;
     end else begin
       operand_valid <= wgt_rd_en;
       clr_aligned   <= clr_acc;
+      m_mask_q      <= active_m_mask;   // masks travel with their read beat
+      n_mask_q      <= active_n_mask;
     end
   end
 
@@ -248,10 +254,10 @@ module npu_top #(
   logic signed [ARR_N*DATA_W-1:0] col_operands;
   always_comb begin
     for (int i = 0; i < ARR_M; i++) begin
-      row_operands[i*DATA_W +: DATA_W] = (operand_valid && active_m_mask[i]) ? wgt_rd_data[i*DATA_W +: DATA_W] : '0;
+      row_operands[i*DATA_W +: DATA_W] = (operand_valid && m_mask_q[i]) ? wgt_rd_data[i*DATA_W +: DATA_W] : '0;
     end
     for (int j = 0; j < ARR_N; j++) begin
-      col_operands[j*DATA_W +: DATA_W] = (operand_valid && active_n_mask[j]) ? act_rd_data[j*DATA_W +: DATA_W] : '0;
+      col_operands[j*DATA_W +: DATA_W] = (operand_valid && n_mask_q[j]) ? act_rd_data[j*DATA_W +: DATA_W] : '0;
     end
   end
 
@@ -283,8 +289,10 @@ module npu_top #(
   logic [OAW-1:0]                drain_col_idx;
   logic signed [ARR_M*ACC_W-1:0] drain_data;
 
-  npu_drain #(.ARR_M(ARR_M), .ARR_N(ARR_N), .ACC_W(ACC_W)) u_drain (
-    .clk, .rst_n, .drain_start, .acc,
+  // Shadow registers load on the clear wave, so the next tile streams while
+  // this one drains
+  npu_drain #(.ARR_M(ARR_M), .ARR_N(ARR_N), .ACC_W(ACC_W), .CAPTURE_ON_CLR(1'b1)) u_drain (
+    .clk, .rst_n, .drain_start, .acc, .clr(clr_skewed),
     .drain_busy, .drain_valid, .drain_col_idx, .drain_data, .drain_done
   );
 
@@ -295,11 +303,16 @@ module npu_top #(
   logic [OAW-1:0]              epi_col_idx;
   logic signed [MEM_DW-1:0]    epi_data;
 
+  // Output tile bookkeeping, latched at drain_start and handed to writeback
+  logic              epi_bias_slot;
+  logic [ADDR_W-1:0] dr_c_addr;
+  logic [7:0]        dr_n_len;
+
   npu_epilogue #(.ARR_M(ARR_M), .ARR_N(ARR_N), .ACC_W(ACC_W), .DATA_W(DATA_W)) u_epi (
     .clk, .rst_n,
     .bias_en, .rq_mult, .rq_shift, .relu_en, .signed_act,
     .in_valid(drain_valid), .in_col_idx(drain_col_idx),
-    .in_acc(drain_data), .in_bias(bias_regs),
+    .in_acc(drain_data), .in_bias(bias_regs[epi_bias_slot]),
     .out_valid(epi_valid), .out_col_idx(epi_col_idx), .out_data(epi_data)
   );
 
@@ -311,32 +324,74 @@ module npu_top #(
   logic [MEM_DW-1:0] obuf_rd_data;
   logic              obuf_cur_bank;
 
-  npu_obuf #(.DW(MEM_DW), .WORDS(ARR_N)) u_obuf (
+  logic              drain_inflight, wbq_valid, wbq_bank, wb_bank, wb_start, wb_busy;
+  logic [ADDR_W-1:0] wbq_c_addr, wb_c_addr;
+  logic [7:0]        wbq_n_len, wb_n_len;
+
+  npu_obuf #(.DW(MEM_DW), .WORDS(ARR_N), .EXT_RD_BANK(1'b1)) u_obuf (
     .clk, .rst_n,
     .swap(obuf_swap), .cur_bank(obuf_cur_bank),
     .wr_en(epi_valid), .wr_addr(epi_col_idx), .wr_data(epi_data),
-    .rd_en(obuf_rd_en), .rd_addr(obuf_rd_addr), .rd_data(obuf_rd_data)
+    .rd_en(obuf_rd_en), .rd_addr(obuf_rd_addr), .rd_bank_sel(wb_bank),
+    .rd_data(obuf_rd_data)
   );
 
-  // A drained tile is "in flight" from drain_start until its writeback starts.
-  // The sequencer may only start the next drain once that tile has fully
-  // left the obuf read bank.
-  logic wb_start, wb_busy, drain_inflight;
+  // Output path: drain -> epilogue -> obuf bank -> 1-entry queue -> writeback.
+  //   drain_inflight: a tile is between drain_start and its obuf swap
+  //   wbq_valid:      a finished obuf bank waits for the writeback engine
+  // A new drain may start when both are clear: its epilogue then writes the
+  // bank whose writeback has already started, i.e. the bank two tiles back,
+  // whose writeback has finished (writeback is sequential).
   always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
-      wb_start       <= 1'b0;
       drain_inflight <= 1'b0;
+      epi_bias_slot  <= 1'b0;
+      dr_c_addr      <= '0;
+      dr_n_len       <= '0;
+      wbq_valid      <= 1'b0;
+      wbq_bank       <= 1'b0;
+      wbq_c_addr     <= '0;
+      wbq_n_len      <= '0;
+      wb_start       <= 1'b0;
+      wb_bank        <= 1'b0;
+      wb_c_addr      <= '0;
+      wb_n_len       <= '0;
     end else begin
-      wb_start <= obuf_swap;
-      if (drain_start) drain_inflight <= 1'b1;
-      else if (wb_start) drain_inflight <= 1'b0;
+      wb_start <= 1'b0;
+
+      if (drain_start) begin
+        drain_inflight <= 1'b1;
+        epi_bias_slot  <= drain_bias_slot;
+        dr_c_addr      <= drain_c_addr;
+        dr_n_len       <= drain_n_len;
+      end
+
+      // Last column written: the written bank (opposite cur_bank before the
+      // swap) is complete
+      if (obuf_swap) begin
+        drain_inflight <= 1'b0;
+        wbq_valid      <= 1'b1;
+        wbq_bank       <= ~obuf_cur_bank;
+        wbq_c_addr     <= dr_c_addr;
+        wbq_n_len      <= dr_n_len;
+      end
+
+      if (wbq_valid && !wb_busy && !wb_start) begin
+        wbq_valid <= 1'b0;
+        wb_start  <= 1'b1;
+        wb_bank   <= wbq_bank;
+        wb_c_addr <= wbq_c_addr;
+        wb_n_len  <= wbq_n_len;
+      end
     end
   end
-  assign drain_ready = !drain_inflight && !wb_busy && !wb_start;
+
+  assign drain_ready = !drain_inflight && !wbq_valid;
+  assign out_idle    = !drain_inflight && !wbq_valid && !wb_start && !wb_busy;
 
   npu_wb #(.MEM_DW(MEM_DW), .ADDR_W(ADDR_W), .WORDS(ARR_N)) u_wb (
     .clk, .rst_n,
-    .wb_start, .wb_base_addr(drain_c_addr), .wb_words(drain_n_len), .wb_busy,
+    .wb_start, .wb_base_addr(wb_c_addr), .wb_words(wb_n_len), .wb_busy,
     .obuf_rd_en, .obuf_rd_addr, .obuf_rd_data,
     .mem_req(arb_req[0]), .mem_addr(arb_addr[0 +: ADDR_W]),
     .mem_wdata(arb_wdata[0 +: MEM_DW]), .mem_ready(arb_ready[0])
@@ -344,7 +399,8 @@ module npu_top #(
 
   // Debug-only outputs left unconnected at the top level
   logic _unused;
-  assign _unused = &{1'b0, tile_valid, tile_desc, drain_busy, obuf_cur_bank, arb_rsp_valid[0], array_en,
+  assign _unused = &{1'b0, drain_busy, arb_rsp_valid[0], wgt_cur_bank, act_cur_bank,
+                     fetch_wgt_busy, fetch_act_busy, fetch_bias_busy,
                      a_east_unused, b_south_unused, 1'b0};
 
 endmodule : npu_top

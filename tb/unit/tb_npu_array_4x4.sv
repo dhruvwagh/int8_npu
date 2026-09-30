@@ -93,6 +93,7 @@ module tb_npu_array_4x4;
     .rst_n         (rst_n),
     .drain_start   (drain_start),
     .acc           (acc),
+    .clr           ('0),
     .drain_busy    (drain_busy),
     .drain_valid   (drain_valid),
     .drain_col_idx (drain_col_idx),

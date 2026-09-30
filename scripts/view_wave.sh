@@ -17,8 +17,8 @@ case "$TARGET" in
   buf|buffer|fetch)
     FILE="sim_output/tb_npu_fetch_buffer.vcd"
     ;;
-  seq|sequencer)
-    FILE="sim_output/tb_npu_sequencer.vcd"
+  top|seq|sequencer)
+    FILE="sim_output/tb_npu_top.vcd"      # python3 scripts/run_top_test.py --vcd
     ;;
   epi|epilogue|obuf)
     FILE="sim_output/tb_npu_epilogue.vcd"

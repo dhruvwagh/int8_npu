@@ -102,6 +102,7 @@ module tb_npu_epilogue;
     .wr_data  (obuf_wr_data),
     .rd_en    (obuf_rd_en),
     .rd_addr  (obuf_rd_addr),
+    .rd_bank_sel (1'b0),
     .rd_data  (obuf_rd_data)
   );
 

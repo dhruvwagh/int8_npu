@@ -2,8 +2,12 @@
 // File: npu_drain.sv
 // Description: Column-by-column accumulator readout module
 //              - Drains ARR_M x ARR_N array accumulators in ARR_N clock cycles
-//              - Captures accumulator snapshot at drain_start to allow
-//                overlapping the drain with the next tile's fill
+//              - CAPTURE_ON_CLR = 0: snapshots all accumulators at drain_start
+//              - CAPTURE_ON_CLR = 1: PE(i,j)'s shadow register loads its
+//                accumulator in the cycle the skewed clear reaches that PE,
+//                i.e. just before the PE clears for the next tile. The next
+//                tile can then stream back to back; drain_start only reads
+//                the shadow registers.
 // Author: Dhruv Wagh
 // ============================================================================
 
@@ -15,12 +19,14 @@
 module npu_drain #(
   parameter int ARR_M = 16,
   parameter int ARR_N = 16,
-  parameter int ACC_W = 32
+  parameter int ACC_W = 32,
+  parameter bit CAPTURE_ON_CLR = 1'b0
 ) (
   input  logic                                clk,
   input  logic                                rst_n,
   input  logic                                drain_start,
   input  logic signed [ARR_M*ARR_N*ACC_W-1:0] acc,
+  input  logic        [ARR_M*ARR_N-1:0]       clr,       // skewed clear (CAPTURE_ON_CLR only)
   output logic                                drain_busy,
   output logic                                drain_valid,
   output logic [$clog2(ARR_N)-1:0]            drain_col_idx,
@@ -51,11 +57,22 @@ module npu_drain #(
     end else begin
       drain_done <= 1'b0;
 
-      if (drain_start && !active) begin
-        // Snapshot all accumulators
+      // Per-PE capture on the clear wavefront
+      if (CAPTURE_ON_CLR) begin
         for (int m = 0; m < ARR_M; m++) begin
           for (int n = 0; n < ARR_N; n++) begin
-            acc_shadow[m][n] <= acc[(m*ARR_N + n)*ACC_W +: ACC_W];
+            if (clr[m*ARR_N + n]) acc_shadow[m][n] <= acc[(m*ARR_N + n)*ACC_W +: ACC_W];
+          end
+        end
+      end
+
+      if (drain_start && !active) begin
+        // Snapshot all accumulators
+        if (!CAPTURE_ON_CLR) begin
+          for (int m = 0; m < ARR_M; m++) begin
+            for (int n = 0; n < ARR_N; n++) begin
+              acc_shadow[m][n] <= acc[(m*ARR_N + n)*ACC_W +: ACC_W];
+            end
           end
         end
 
@@ -66,7 +83,8 @@ module npu_drain #(
 
         // Drive first column (col 0)
         for (int m = 0; m < ARR_M; m++) begin
-          drain_data[m*ACC_W +: ACC_W] <= acc[(m*ARR_N + 0)*ACC_W +: ACC_W];
+          drain_data[m*ACC_W +: ACC_W] <= CAPTURE_ON_CLR ? acc_shadow[m][0]
+                                                         : acc[(m*ARR_N + 0)*ACC_W +: ACC_W];
         end
 
         if (ARR_N == 1) begin

@@ -39,7 +39,7 @@ def make_layer(rng, M, N, K, relu=True, bias=True, signed_act=True, sat_target=1
     return build_layer_job(A, B, bias_v, cfg)
 
 
-def generate(seed, n_random, ideal_mem=False):
+def generate(seed, n_random, ideal_mem=False, harsh_mem=False):
     rng = np.random.default_rng(seed)
     pyrng = random.Random(seed)
 
@@ -82,6 +82,8 @@ def generate(seed, n_random, ideal_mem=False):
             lat, jit, rdy = 1, 0, 100
         else:
             lat, jit, rdy = pyrng.randint(1, 6), pyrng.choice([0, 0, 2, 5]), pyrng.choice([100, 100, 80, 50])
+            if harsh_mem:
+                lat, jit, rdy = pyrng.randint(4, 12), pyrng.choice([5, 10]), pyrng.choice([20, 35, 50])
         c = job.cfg
         lines.append(f"{i} {M} {N} {K} {job.a_base:08x} {job.b_base:08x} {job.c_base:08x} "
                      f"{job.bias_base:08x} {c.rq_mult & 0xFFFFFFFF:08x} {c.rq_shift} {c.flags} "
@@ -111,6 +113,8 @@ def main():
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--random", type=int, default=20, help="number of random layers")
     ap.add_argument("--vcd", action="store_true")
+    ap.add_argument("--harsh-mem", action="store_true",
+                    help="long latency, large jitter, 20-50%% mem_ready (stresses overlap hazards)")
     ap.add_argument("--ideal-mem", action="store_true",
                     help="1-cycle memory, no jitter or backpressure (for baseline perf numbers)")
     args = ap.parse_args()
@@ -118,7 +122,7 @@ def main():
     os.chdir(REPO_ROOT)
     os.makedirs("sim_output", exist_ok=True)
     print("== Generating layer jobs (seed %d)" % args.seed)
-    generate(args.seed, args.random, args.ideal_mem)
+    generate(args.seed, args.random, args.ideal_mem, args.harsh_mem)
 
     plus = ["+vcd"] if args.vcd else []
     ok = True

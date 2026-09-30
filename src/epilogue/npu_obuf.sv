@@ -17,7 +17,11 @@
 module npu_obuf #(
   parameter int DW    = 128,           // 128 bits = 16 bytes per column word
   parameter int WORDS = 16,            // 16 words = 256 B per bank (512 B total)
-  parameter int AW    = $clog2(WORDS)  // 4 bits
+  parameter int AW    = $clog2(WORDS), // 4 bits
+  // 0: read bank = cur_bank (writer and reader alternate strictly).
+  // 1: read bank = rd_bank_sel, chosen by the reader per transfer, so a
+  //    writeback can still be draining one bank when the writer swaps.
+  parameter bit EXT_RD_BANK = 1'b0
 ) (
   input  logic          clk,
   input  logic          rst_n,
@@ -35,6 +39,7 @@ module npu_obuf #(
   // DMA Read Port (to tensor memory writeback)
   input  logic          rd_en,
   input  logic [AW-1:0] rd_addr,
+  input  logic          rd_bank_sel,   // EXT_RD_BANK only
   output logic [DW-1:0] rd_data
 );
 
@@ -57,42 +62,32 @@ module npu_obuf #(
   logic [AW-1:0] b1_waddr, b1_raddr;
   logic [DW-1:0] b1_wdata, b1_rdata;
 
-  // Muxing between epilogue write and DMA read ports
-  always_comb begin
-    if (cur_bank == 1'b0) begin
-      // Bank 0 is DMA Read
-      b0_re    = rd_en;
-      b0_raddr = rd_addr;
-      b0_we    = 1'b0;
-      b0_waddr = '0;
-      b0_wdata = '0;
+  // Epilogue writes the bank opposite cur_bank; the reader reads cur_bank or
+  // its own selection. Each bank is 1R1W, so the two ports never conflict.
+  wire wr_bank = ~cur_bank;
+  wire rd_bank = EXT_RD_BANK ? rd_bank_sel : cur_bank;
 
-      // Bank 1 is Epilogue Write
-      b1_we    = wr_en;
-      b1_waddr = wr_addr;
-      b1_wdata = wr_data;
-      b1_re    = 1'b0;
-      b1_raddr = '0;
+  assign b0_we    = wr_en && (wr_bank == 1'b0);
+  assign b1_we    = wr_en && (wr_bank == 1'b1);
+  assign b0_waddr = wr_addr;
+  assign b1_waddr = wr_addr;
+  assign b0_wdata = wr_data;
+  assign b1_wdata = wr_data;
+  assign b0_re    = rd_en && (rd_bank == 1'b0);
+  assign b1_re    = rd_en && (rd_bank == 1'b1);
+  assign b0_raddr = rd_addr;
+  assign b1_raddr = rd_addr;
 
-      rd_data  = b0_rdata;
-    end else begin
-      // Bank 1 is DMA Read
-      b1_re    = rd_en;
-      b1_raddr = rd_addr;
-      b1_we    = 1'b0;
-      b1_waddr = '0;
-      b1_wdata = '0;
-
-      // Bank 0 is Epilogue Write
-      b0_we    = wr_en;
-      b0_waddr = wr_addr;
-      b0_wdata = wr_data;
-      b0_re    = 1'b0;
-      b0_raddr = '0;
-
-      rd_data  = b1_rdata;
+  // Select read data by the bank that was read (1-cycle read latency)
+  logic rd_bank_q;
+  always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+      rd_bank_q <= 1'b0;
+    end else if (rd_en) begin
+      rd_bank_q <= rd_bank;
     end
   end
+  assign rd_data = rd_bank_q ? b1_rdata : b0_rdata;
 
   // --------------------------------------------------------------------------
   // SRAM Bank Instantiations

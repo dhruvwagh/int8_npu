@@ -709,3 +709,71 @@ python3 scripts/run_mnist_test.py -n 1000                          # Verilator, 
 python3 scripts/run_mnist_test.py -n 1000 --mem-lat 4 --mem-jit 3 --mem-rdy 80
 python3 scripts/run_mnist_test.py --simulator both -n 10
 ```
+
+---
+
+## 2026-09-30 — Milestone 13: Pipelined Sequencer (Prefetch, Back-to-Back Tiles, Overlapped Drain)
+
+*Done before milestone 10 closes, so timing closure is measured on the final datapath.*
+
+### 1. Context & Objectives
+- **Problem (M7/M8):** the sequencer ran fetch → compute → fill → drain → writeback strictly in series. The ping-pong buffers existed but never overlapped anything. Baseline MNIST: 10,149 cycles/image, 11.2% array utilization.
+- **Target:** overlap every stage the hardware allows, keep MNIST bit-exact, and measure the gain.
+
+### 2. Microarchitecture
+**Two decoupled controllers + one-entry mailbox (`npu_sequencer.sv`, rewritten).**
+- *Fetch side* walks the loop nest and fetches tile *t+1* into the idle banks while compute streams tile *t*, then posts a descriptor. Weights are fetched only when (m0, k0) changes (weight residency is kept). Bias is fetched once per M panel into one of **two bias slots**, so panel *p+1*'s bias can load while panel *p* still drains; a slot is released when the last block of its panel has been drained.
+- *Compute side* pops a descriptor, swaps banks and streams `k_len` words. Tiles of the same output block (K split) stream **back to back with no bubble**.
+
+**Capture wave instead of fill-then-drain.**
+- After a tile that completes an output block, compute issues a one-cycle clear pulse with zero operands. It follows the data diagonally through the array (the skew network already delays `clr` by i+j). As it reaches PE(i,j), the PE's result is copied into the drain shadow register (`npu_drain`, new `CAPTURE_ON_CLR` mode) and the PE clears.
+- The next tile follows one cycle behind: **one bubble per output tile** instead of a 31-cycle fill wait.
+- `drain_start` fires ARR_M+1 cycles after the wave (column 0 of the shadow complete). The shadow is read column by column exactly as the wave finishes each column. A new wave waits until the previous drain has started, otherwise it would overwrite shadow registers still being read.
+
+**Overlapped output path (`npu_top.sv`).**
+- drain → epilogue → obuf bank → 1-entry queue → writeback. A new drain may start once the previous tile has reached the queue and the queue is empty; its epilogue then writes the bank whose writeback has already finished.
+
+**Hazards found while designing for back-to-back operation.** These were not visible in the serial design:
+
+| Hazard | Fix |
+|---|---|
+| Buffer read data is selected by `cur_bank`, but it returns one cycle after the read. A swap right after a tile's last read would return the other bank's data. | Register the read bank at read time (`rd_bank_q`) in `npu_buf_act/wgt` and `npu_obuf` |
+| Writeback of tile *t* can still be reading an obuf bank when tile *t+1*'s epilogue finishes and swaps | `npu_obuf` `EXT_RD_BANK` mode: writeback latches which bank to read at start |
+| The accumulator clear arriving one cycle before its data (noted in M7) now matters: the preceding cycle carries the previous tile's last data | Already fixed in M7 (`clr_aligned`) |
+
+Tile masks now travel with each read beat (`m_mask_q`/`n_mask_q`), since consecutive tiles can have different shapes.
+
+### 3. Verification
+- `tb_npu_top`: 30 directed + random layers on iverilog and Verilator; 5 seeds × 110 layers on Verilator; new `--harsh-mem` mode (latency 4–12, jitter 5–10, `mem_ready` 20–50%): 3 seeds × 70 layers. All bit-exact.
+- `tb_mnist`: 1,000 images, memory latency 4+0–3 and 80% ready: all bit-exact, accuracy 98.70% = golden.
+- Unit suites M1–M4, M6 pass. The M5 sequencer unit test drove the old serial interface through emulated fetch/drain units; it was retired, since `tb_npu_top` exercises the real sequencer with real data.
+- **Mutation checks** (each must fail the regression):
+
+| Injected bug | Result |
+|---|---|
+| Clear/capture wave not delayed to match SRAM read latency | caught (1,795 errors) — the M7 case that was unobservable is now covered |
+| `drain_start` one cycle early | caught |
+| Activation buffer read mux uses `cur_bank` | caught |
+| obuf read bank follows `cur_bank` | not caught with normal memory (writeback has top arbiter priority and always finishes first); **caught under `--harsh-mem`** |
+| Next wave allowed before previous drain starts | caught |
+
+### 4. Results
+
+Ideal memory (1-cycle latency, no backpressure):
+
+| Layer | Serial (M8) | Pipelined | Speedup | Utilization |
+|---|---|---|---|---|
+| conv1 8×784×9 | 4,574 | 1,595 | 2.9× | 4.8% → 13.8% |
+| conv2 16×196×72 | 2,915 | 1,398 | 2.1× | 30.3% → 63.1% |
+| fc 10×1×784 | 2,660 | 1,770 | 1.5× | 1.2% → 1.7% |
+| **MNIST total** | **10,149** | **4,763** | **2.13×** | 11.2% → 23.8% |
+
+Memory latency 4 + 0–3 jitter, 80% `mem_ready`: 11,607 → 6,098 cycles/image (1.90×).
+
+### 5. Where the remaining cycles go
+With the control overhead gone, every MNIST layer is now limited by the single 16 B/cycle memory port:
+- **conv2:** each tile needs 72 activation words in and 16 output words out = 88 port cycles, against 73 compute cycles.
+- **conv1:** K = 9, so each tile needs 9 words in, 16 out, and only 9 compute cycles. The port, and the 16-cycle drain per 16 output columns, dominate.
+- **fc:** N = 1, so every weight byte is used once. Each K tile moves 128 weight + 128 activation words for 128 compute cycles on one array column.
+
+This is the roofline behaviour that milestone 12 will quantify with the `MEM_DW` sweep and the performance model.
