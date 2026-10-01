@@ -954,3 +954,39 @@ Reports: `pd/reports/synth_area.txt`, `pd/reports/sta_summary.txt`, `sta_setup_s
 Each epilogue stage adds one cycle of latency per output tile, which does not change throughput. One effect showed up in the cycle counts: conv1 got *faster*, 1,597 → 1,436 cycles. The performance model shows the same memory beats but port idle time dropping from 363 to 198 cycles. conv1 is port-bound, and the extra cycle shifts when writeback bursts start, so they fill gaps in the fetch stream instead of colliding with it. The lesson is that conv1's speed depends on traffic phase, not just bandwidth. An explicit fix, such as a third activation bank to let prefetch start earlier, would make it independent of that luck. MNIST: **4,610 cycles/image** (ideal memory), bit-exact.
 
 The M12 tables were measured on the 2-stage epilogue. `scripts/dse.py` was re-run on the final design; `docs/results/dse.md` and the figures are current. The conclusions are unchanged, but absolute numbers moved slightly (e.g. a 32 B/cycle port now gives 3,266 cycles/image, a 1.41× speedup).
+
+---
+
+## 2026-10-01 — Milestone 11: FPGA Prototype (Lattice ECP5, open-source flow)
+
+### 1. Context & Objectives
+- **Target:** build the same RTL for an FPGA with real place-and-route and report Fmax and resource use. There is no board, so the deliverable is a routed design and its timing, not on-hardware execution.
+- **Toolchain** (macOS, all open source): Yosys `synth_ecp5` → nextpnr-ecp5 0.11 (OSS CAD Suite) → `ecppack` would produce a bitstream. The part is an LFE5U-85F CABGA381, the largest ECP5.
+
+### 2. Design changes for FPGA
+- `npu_sram` gets an `FPGA` mode: the behavioral model, which Yosys infers as block RAM (DP16KD).
+- `src/fpga/npu_fpga_top.sv` keeps the tensor memory on chip (64 KB block RAM in 32-bit lanes), because the 128-bit memory port alone exceeds the package I/O. A 32-bit host port loads inputs and reads results; the AXI-Lite CSR port is passed through. The wrapper is parameterized by array size.
+- The flow builds the 8×8 PE multipliers from LUTs (Booth-encoded, `booth` pass applied to `npu_pe` before DSP inference). The 18×18 DSP blocks are kept for the wide 33×32 epilogue multipliers.
+
+### 3. Does the 16×16 fit an ECP5? No — measured, not assumed
+| 16×16 mapping | LUT4 | DSP (MULT18X18D) | Verdict |
+|---|---|---|---|
+| Default (all multipliers to DSP) | 51.8K | **324** / 156 | DSP over capacity |
+| PE multipliers in LUTs (Booth, ~150 LUTs/PE extra) | ~90K / 84K | 68 | LUT over capacity |
+
+The full design was also synthesized for an AMD 7-series part as a **resource estimate only** (Yosys `synth_xilinx`, no open place-and-route): **42.0K LUTs, 28.5K FFs, 324 DSP48E1, 40 RAMB36**. That fits an Artix-7 200T-class device (134K LUTs, 740 DSPs) at roughly 31% LUTs and 44% DSPs.
+
+So the FPGA prototype is the **8×8 configuration** of the same RTL. It is the configuration verified bit-exact in M9.
+
+### 4. Results — 8×8 on ECP5-85F
+| Build | Fmax (target 50 MHz) | LUT/COMB | FF | DSP | BRAM (DP16KD) |
+|---|---|---|---|---|---|
+| 2-stage epilogue | 32.1 MHz | 39.1K (47%) | 8.9K (11%) | 36 (23%) | 40 (19%) |
+| 3-stage epilogue | 29.3 MHz | 39.1K (47%) | 9.2K (11%) | 36 (23%) | 40 (19%) |
+| **4-stage epilogue with cheaper rounding (M10 step 8)** | **52.7 MHz** | **31.8K (38%)** | 9.3K (11%) | 36 (23%) | 40 (19%) |
+
+- **The same fix closed both targets.** On the FPGA, the critical path was the rounding stage. The variable shift of a 65-bit value becomes a large LUT mux tree that is mostly routing (18 ns of a 34 ns path). nextpnr also cannot take multicycle constraints, so the static RQ_SHIFT register counted as a single-cycle startpoint. Rounding after the shift and registering only a 9-bit clamped magnitude removed about 7K LUTs and lifted Fmax 1.8×.
+- Splitting the multiply into its own stage (3-stage build) did not help the FPGA; its multiplier is in DSP blocks. Run-to-run placement noise is a few MHz (32.1 vs 29.3).
+- **Remaining critical path:** still the epilogue's sign/ReLU/saturate output path, 6.2 ns logic + 8.8 ns routing (≈ 19 ns). The next FPGA step would be registering the stage 2b inputs closer to the output register, or a placement constraint for the epilogue.
+
+Reproduce: `python3 scripts/run_fpga.py --arr 8` (~5 min synthesis, ~25 min place-and-route).

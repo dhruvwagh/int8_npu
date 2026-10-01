@@ -28,10 +28,10 @@ Every layer now runs at 78–92% of the memory-bandwidth roofline. The performan
 - **Timing closed at 50 MHz at all three corners** (ss 100 °C/1.6 V: +0.07 ns; tt: +7.9 ns; ff: +8.4 ns; hold clean), after eight measured rounds of RTL and constraint fixes recorded in [the M10 log entry](docs/ENGINEERING_LOG.md)
 - Area 6.0 mm²: 3.05 mm² OpenRAM SRAM macros, 1.28 mm² PE array, ~1.0 mm² epilogue
 
-**FPGA**
+**FPGA** (Lattice ECP5-85F, Yosys + nextpnr, no board)
 
-- 8×8 configuration placed and routed on a Lattice ECP5-85F (Yosys + nextpnr). See [the M11 log entry](docs/ENGINEERING_LOG.md) for Fmax and utilization.
-- The full 16×16 needs 324 DSPs, more than the ECP5's 156. On an AMD 7-series part it synthesizes to 42K LUTs / 28.5K FFs / 324 DSP48 / 40 BRAM36 (fits an Artix-7 200T class device; synthesis estimate only).
+- 8×8 configuration of the same RTL placed and routed at **52.7 MHz** (target 50 MHz): 38% LUTs, 11% FFs, 23% DSPs, 19% block RAM
+- The full 16×16 needs 324 DSPs, more than the ECP5's 156. On an AMD 7-series part it synthesizes to 42K LUTs / 28.5K FFs / 324 DSP48 / 40 BRAM36 (fits an Artix-7 200T class device; synthesis estimate only)
 
 ## Figures
 

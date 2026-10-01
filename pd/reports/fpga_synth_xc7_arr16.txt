@@ -1,0 +1,428 @@
+
+20. Printing statistics.
+
+=== $paramod$0d60eba6e3c2ce2cbed396dcc74ec84365ab5128\npu_sram ===
+
+        +----------Local Count, excluding submodules.
+        | 
+       11 wires
+      475 wire bits
+        8 public wires
+      274 public wire bits
+        8 ports
+      274 port bits
+        4 cells
+        2   LUT2
+        2   RAMB36E1
+
+=== $paramod$31c92604de2bed4779c7c825cf949f5ce86bbfb7\npu_top ===
+
+        +----------Local Count, excluding submodules.
+        | 
+     5761 wires
+    28293 wire bits
+      143 public wires
+    13947 public wire bits
+       27 ports
+      393 port bits
+    10452 cells
+        9   CARRY4
+     1953   FDCE
+     1956   INV
+      249   LUT1
+      825   LUT2
+     1138   LUT3
+      668   LUT4
+      714   LUT5
+     1784   LUT6
+      980   MUXF7
+      176   MUXF8
+       14 submodules
+        1   $paramod$44193c20168ba823e8e6f014e7783d9951efe248\npu_csr
+        1   $paramod$49eacddbf5202f4ae8ce6b6e98ea683ba02fead3\npu_drain
+        1   $paramod$784ba20f0a5027779d72e3981707058551715a9b\npu_wb
+        1   $paramod$7e83d908a12ac269cf1f0769095c08c8a83539d1\npu_sequencer
+        2   $paramod$a14a4579dd5f0465b5fd6368a32e2104da4693af\npu_fetch
+        1   $paramod$a76e56e8a7efcc83f6f3369320dcecc0e0f10c0b\npu_obuf
+        1   $paramod$a86e13466e274e025b34c75acbd02c9ac3f5a192\npu_buf_act
+        1   $paramod$a86e13466e274e025b34c75acbd02c9ac3f5a192\npu_buf_wgt
+        1   $paramod$ac03e41b1dc01a7f3710afc45a3716c4824f4804\npu_array
+        1   $paramod$b8c600750c5691ccc11504a89164c613f224f7a9\npu_skew
+        1   $paramod$d2b8df6da09ae1ac27f32221519c929991e7f8d4\npu_fetch
+        1   $paramod$e0e1d0e657ac4e27a5c42b69da544db0e9e767e1\npu_epilogue
+        1   $paramod$e494f17985f0974f415cee0916e112a4799c80ec\npu_mem_arb
+
+=== $paramod$44193c20168ba823e8e6f014e7783d9951efe248\npu_csr ===
+
+        +----------Local Count, excluding submodules.
+        | 
+      692 wires
+     1565 wire bits
+       56 public wires
+      692 public wire bits
+       41 ports
+      419 port bits
+     1185 cells
+      405   FDCE
+        2   FDPE
+      409   INV
+        7   LUT2
+       50   LUT3
+        8   LUT4
+       11   LUT5
+      202   LUT6
+       90   MUXF7
+        1   MUXF8
+
+=== $paramod$49eacddbf5202f4ae8ce6b6e98ea683ba02fead3\npu_drain ===
+
+        +----------Local Count, excluding submodules.
+        | 
+    12875 wires
+    35329 wire bits
+      268 public wires
+    17167 public wire bits
+       10 ports
+     8970 port bits
+    24140 cells
+        6   CARRY4
+     8711   FDCE
+     8713   INV
+      100   LUT1
+       73   LUT2
+      351   LUT3
+     1039   LUT4
+      515   LUT5
+     2596   LUT6
+     1543   MUXF7
+      493   MUXF8
+
+=== $paramod$784ba20f0a5027779d72e3981707058551715a9b\npu_wb ===
+
+        +----------Local Count, excluding submodules.
+        | 
+      376 wires
+     1137 wire bits
+       27 public wires
+      661 public wire bits
+       13 ports
+      339 port bits
+      832 cells
+       12   CARRY4
+      318   FDCE
+      321   INV
+        1   LUT1
+       10   LUT2
+      131   LUT3
+        4   LUT4
+        3   LUT5
+       26   LUT6
+        4   MUXF7
+        2   MUXF8
+
+=== $paramod$7e83d908a12ac269cf1f0769095c08c8a83539d1\npu_sequencer ===
+
+        +----------Local Count, excluding submodules.
+        | 
+     1349 wires
+     4014 wire bits
+       91 public wires
+     1072 public wire bits
+       46 ports
+      495 port bits
+     2271 cells
+       92   CARRY4
+        4   DSP48E1
+      784   FDCE
+      833   INV
+        6   LUT1
+      223   LUT2
+       20   LUT3
+       29   LUT4
+       73   LUT5
+      179   LUT6
+       19   MUXF7
+        9   MUXF8
+
+=== $paramod$97a64172dc913e2f5efd95071fa7ef0f92b22b86\npu_sram ===
+
+        +----------Local Count, excluding submodules.
+        | 
+       12 wires
+      531 wire bits
+        8 public wires
+      268 public wire bits
+        8 ports
+      268 port bits
+      152 cells
+      128   FDRE
+        2   LUT2
+       22   RAM32M
+
+=== $paramod$a14a4579dd5f0465b5fd6368a32e2104da4693af\npu_fetch ===
+
+        +----------Local Count, excluding submodules.
+        | 
+      253 wires
+      789 wire bits
+       20 public wires
+      402 public wire bits
+       15 ports
+      344 port bits
+      490 cells
+       12   CARRY4
+      194   FDCE
+      197   INV
+       55   LUT2
+        5   LUT4
+        1   LUT5
+       19   LUT6
+        5   MUXF7
+        2   MUXF8
+
+=== $paramod$a76e56e8a7efcc83f6f3369320dcecc0e0f10c0b\npu_obuf ===
+
+        +----------Local Count, excluding submodules.
+        | 
+       28 wires
+      808 wire bits
+       26 public wires
+      806 public wire bits
+       11 ports
+      271 port bits
+      137 cells
+        2   FDCE
+        3   INV
+        4   LUT2
+      128   LUT3
+        2 submodules
+        2   $paramod$97a64172dc913e2f5efd95071fa7ef0f92b22b86\npu_sram
+
+=== $paramod$a86e13466e274e025b34c75acbd02c9ac3f5a192\npu_buf_act ===
+
+        +----------Local Count, excluding submodules.
+        | 
+       26 wires
+      824 wire bits
+       23 public wires
+      821 public wire bits
+       10 ports
+      276 port bits
+      421 cells
+        2   FDCE
+        3   INV
+      288   LUT2
+      128   LUT3
+        2 submodules
+        2   $paramod$0d60eba6e3c2ce2cbed396dcc74ec84365ab5128\npu_sram
+
+=== $paramod$a86e13466e274e025b34c75acbd02c9ac3f5a192\npu_buf_wgt ===
+
+        +----------Local Count, excluding submodules.
+        | 
+       26 wires
+      824 wire bits
+       23 public wires
+      821 public wire bits
+       10 ports
+      276 port bits
+      421 cells
+        2   FDCE
+        3   INV
+      288   LUT2
+      128   LUT3
+        2 submodules
+        2   $paramod$0d60eba6e3c2ce2cbed396dcc74ec84365ab5128\npu_sram
+
+=== $paramod$ac03e41b1dc01a7f3710afc45a3716c4824f4804\npu_array ===
+
+        +----------Local Count, excluding submodules.
+        | 
+     1065 wires
+    21763 wire bits
+     1065 public wires
+    21763 public wire bits
+        9 ports
+     8963 port bits
+      256 submodules
+      256   $paramod\npu_pe\ACC_W=s32'00000000000000000000000000100000\HAS_EN=1'0
+
+=== $paramod$b8c600750c5691ccc11504a89164c613f224f7a9\npu_skew ===
+
+        +----------Local Count, excluding submodules.
+        | 
+     2233 wires
+     4929 wire bits
+      283 public wires
+     2979 public wire bits
+        9 ports
+      772 port bits
+     3900 cells
+     1950   FDCE
+     1950   INV
+
+=== $paramod$d2b8df6da09ae1ac27f32221519c929991e7f8d4\npu_fetch ===
+
+        +----------Local Count, excluding submodules.
+        | 
+      250 wires
+      783 wire bits
+       20 public wires
+      397 public wire bits
+       15 ports
+      339 port bits
+      478 cells
+       12   CARRY4
+      189   FDCE
+      192   INV
+       55   LUT2
+        5   LUT4
+        1   LUT5
+       17   LUT6
+        5   MUXF7
+        2   MUXF8
+
+=== $paramod$e0e1d0e657ac4e27a5c42b69da544db0e9e767e1\npu_epilogue ===
+
+        +----------Local Count, excluding submodules.
+        | 
+     9590 wires
+    62273 wire bits
+      176 public wires
+     8185 public wire bits
+       14 ports
+     1204 port bits
+    19614 cells
+     1426   CARRY4
+       64   DSP48E1
+     1178   FDCE
+     2383   INV
+      295   LUT1
+     2858   LUT2
+     2982   LUT3
+      847   LUT4
+     1166   LUT5
+     4839   LUT6
+     1481   MUXF7
+       95   MUXF8
+
+=== $paramod$e494f17985f0974f415cee0916e112a4799c80ec\npu_mem_arb ===
+
+        +----------Local Count, excluding submodules.
+        | 
+      102 wires
+     1260 wire bits
+       31 public wires
+     1109 public wire bits
+       16 ports
+     1078 port bits
+      270 cells
+        5   CARRY4
+       26   FDCE
+       33   INV
+        3   LUT1
+        6   LUT2
+        9   LUT3
+        6   LUT4
+       11   LUT5
+      168   LUT6
+        2   MUXF7
+        1   MUXF8
+
+=== $paramod\npu_pe\ACC_W=s32'00000000000000000000000000100000\HAS_EN=1'0 ===
+
+        +----------Local Count, excluding submodules.
+        | 
+       65 wires
+      325 wire bits
+       12 public wires
+      117 public wire bits
+        9 ports
+       68 port bits
+      169 cells
+        8   CARRY4
+        1   DSP48E1
+       48   FDCE
+       48   INV
+       32   LUT2
+       32   LUT3
+
+=== npu_fpga_top ===
+
+        +----------Local Count, excluding submodules.
+        | 
+      235 wires
+     3959 wire bits
+       48 public wires
+      751 public wire bits
+       25 ports
+      183 port bits
+      384 cells
+        1   BUFG
+        3   FDCE
+      109   IBUF
+        4   INV
+      141   LUT3
+       36   LUT6
+       74   OBUF
+       16   RAMB36E1
+        1 submodules
+        1   $paramod$31c92604de2bed4779c7c825cf949f5ce86bbfb7\npu_top
+
+=== design hierarchy ===
+
+        +----------Count including submodules.
+        | 
+   109069 npu_fpga_top
+    10452 $paramod$31c92604de2bed4779c7c825cf949f5ce86bbfb7\npu_top
+     1185   $paramod$44193c20168ba823e8e6f014e7783d9951efe248\npu_csr
+    24140   $paramod$49eacddbf5202f4ae8ce6b6e98ea683ba02fead3\npu_drain
+      832   $paramod$784ba20f0a5027779d72e3981707058551715a9b\npu_wb
+     2271   $paramod$7e83d908a12ac269cf1f0769095c08c8a83539d1\npu_sequencer
+      490   $paramod$a14a4579dd5f0465b5fd6368a32e2104da4693af\npu_fetch
+      137   $paramod$a76e56e8a7efcc83f6f3369320dcecc0e0f10c0b\npu_obuf
+      152     $paramod$97a64172dc913e2f5efd95071fa7ef0f92b22b86\npu_sram
+      421   $paramod$a86e13466e274e025b34c75acbd02c9ac3f5a192\npu_buf_act
+        4     $paramod$0d60eba6e3c2ce2cbed396dcc74ec84365ab5128\npu_sram
+      421   $paramod$a86e13466e274e025b34c75acbd02c9ac3f5a192\npu_buf_wgt
+        4     $paramod$0d60eba6e3c2ce2cbed396dcc74ec84365ab5128\npu_sram
+      169     $paramod\npu_pe\ACC_W=s32'00000000000000000000000000100000\HAS_EN=1'0
+     3900   $paramod$b8c600750c5691ccc11504a89164c613f224f7a9\npu_skew
+      478   $paramod$d2b8df6da09ae1ac27f32221519c929991e7f8d4\npu_fetch
+    19614   $paramod$e0e1d0e657ac4e27a5c42b69da544db0e9e767e1\npu_epilogue
+      270   $paramod$e494f17985f0974f415cee0916e112a4799c80ec\npu_mem_arb
+
+        +----------Count including submodules.
+        | 
+    51822 wires
+   255501 wire bits
+     5440 public wires
+   103559 public wire bits
+     2638 ports
+    43706 port bits
+        - memories
+        - memory bits
+        - processes
+   109069 cells
+        1   BUFG
+     3634   CARRY4
+      324   DSP48E1
+    28199   FDCE
+        2   FDPE
+      256   FDRE
+      109   IBUF
+    29485   INV
+      654   LUT1
+    12951   LUT2
+    13398   LUT3
+     2616   LUT4
+     2496   LUT5
+     9885   LUT6
+     4134   MUXF7
+      783   MUXF8
+       74   OBUF
+       44   RAM32M
+       24   RAMB36E1
+        1 submodules
+        1   $paramod$31c92604de2bed4779c7c825cf949f5ce86bbfb7\npu_top
+
