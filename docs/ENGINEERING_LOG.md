@@ -319,10 +319,10 @@ Detailed chronological record of design decisions, microarchitectural trade-offs
 ### 3. Implementation Steps
 
 1. **RTL Design:**
-   - [src/buffer/npu_sram.sv](file:///Users/dhruv/Documents/int8_npu/src/buffer/npu_sram.sv): Parameterized SRAM wrapper (DW=128, WORDS=128 = 2 KB) with `(* blackbox *)`.
-   - [src/buffer/npu_buf_act.sv](file:///Users/dhruv/Documents/int8_npu/src/buffer/npu_buf_act.sv): 4 KB ping-pong activation buffer wrapping two `npu_sram` macros with multiplexed compute-read / fetch-write ports.
-   - [src/buffer/npu_buf_wgt.sv](file:///Users/dhruv/Documents/int8_npu/src/buffer/npu_buf_wgt.sv): 4 KB ping-pong weight buffer supporting persistent weight-tile residency.
-   - [src/ctrl/npu_fetch.sv](file:///Users/dhruv/Documents/int8_npu/src/ctrl/npu_fetch.sv): 128-bit wide fetch engine with decoupled request/response counters and buffer write generation.
+   - [src/buffer/npu_sram.sv](../src/buffer/npu_sram.sv): Parameterized SRAM wrapper (DW=128, WORDS=128 = 2 KB) with `(* blackbox *)`.
+   - [src/buffer/npu_buf_act.sv](../src/buffer/npu_buf_act.sv): 4 KB ping-pong activation buffer wrapping two `npu_sram` macros with multiplexed compute-read / fetch-write ports.
+   - [src/buffer/npu_buf_wgt.sv](../src/buffer/npu_buf_wgt.sv): 4 KB ping-pong weight buffer supporting persistent weight-tile residency.
+   - [src/ctrl/npu_fetch.sv](../src/ctrl/npu_fetch.sv): 128-bit wide fetch engine with decoupled request/response counters and buffer write generation.
 
 2. **Verification Environment (`tb/unit/tb_npu_fetch_buffer.sv`):**
    - Implemented simulated 64 KB Tensor Memory model with programmable backpressure and pipeline delay emulation.
@@ -334,9 +334,9 @@ Detailed chronological record of design decisions, microarchitectural trade-offs
      - **Test 5:** Weight-tile residency verifying weight buffer persistence across 3 consecutive activation buffer swaps with zero refetch traffic.
 
 3. **Automation & Tooling:**
-   - [scripts/run_buffer_test.py](file:///Users/dhruv/Documents/int8_npu/scripts/run_buffer_test.py): Python runner automating simulation on Icarus Verilog and Verilator 5, followed by strict Yosys synthesis assertions.
-   - [scripts/sim_buffer.sh](file:///Users/dhruv/Documents/int8_npu/scripts/sim_buffer.sh): Executable bash wrapper.
-   - [scripts/view_wave.sh](file:///Users/dhruv/Documents/int8_npu/scripts/view_wave.sh): Added `buf` target to inspect `sim_output/tb_npu_fetch_buffer.vcd`.
+   - [scripts/run_buffer_test.py](../scripts/run_buffer_test.py): Python runner automating simulation on Icarus Verilog and Verilator 5, followed by strict Yosys synthesis assertions.
+   - [scripts/sim_buffer.sh](../scripts/sim_buffer.sh): Executable bash wrapper.
+   - [scripts/view_wave.sh](../scripts/view_wave.sh): Added `buf` target to inspect `sim_output/tb_npu_fetch_buffer.vcd`.
 
 ### 4. Verification Results & Synthesis Audit
 
@@ -420,12 +420,12 @@ Detailed chronological record of design decisions, microarchitectural trade-offs
 
 ### 3. Implementation Steps
 
-1. **RTL Design ([src/ctrl/npu_sequencer.sv](file:///Users/dhruv/Documents/int8_npu/src/ctrl/npu_sequencer.sv)):**
+1. **RTL Design ([src/ctrl/npu_sequencer.sv](../src/ctrl/npu_sequencer.sv)):**
    - Implemented 11-state FSM: `S_IDLE`, `S_FETCH_WGT`, `S_FETCH_ACT`, `S_WAIT_FETCH`, `S_BUFFER_SWAP`, `S_COMPUTE_PRIME`, `S_COMPUTE_STREAM`, `S_COMPUTE_FILL`, `S_DRAIN_WAIT`, `S_NEXT_TILE`, `S_DONE`.
    - Integrated tile descriptor formatting (`tile_desc_t`) with 32-bit address generation arithmetic for weights, activations, outputs, and bias.
    - Implemented weight residency tracking (`wgt_resident`) and automatic loop-order selection (`k_split_multitile`).
 
-2. **Verification Suite ([tb/unit/tb_npu_sequencer.sv](file:///Users/dhruv/Documents/int8_npu/tb/unit/tb_npu_sequencer.sv)):**
+2. **Verification Suite ([tb/unit/tb_npu_sequencer.sv](../tb/unit/tb_npu_sequencer.sv)):**
    - Emulated fetch engines, ping-pong buffer banking, and column drain modules.
    - Developed 7 test suites:
      - **Test 1:** Standard full-tile GEMM ($M=16, N=16, K=16$).
@@ -437,9 +437,9 @@ Detailed chronological record of design decisions, microarchitectural trade-offs
      - **Test 7:** Immediate abort mid-execution.
 
 3. **Automation & Tooling:**
-   - [scripts/run_sequencer_test.py](file:///Users/dhruv/Documents/int8_npu/scripts/run_sequencer_test.py): Python runner for dual-simulator and synthesis check.
-   - [scripts/sim_sequencer.sh](file:///Users/dhruv/Documents/int8_npu/scripts/sim_sequencer.sh): Executable wrapper.
-   - [scripts/view_wave.sh](file:///Users/dhruv/Documents/int8_npu/scripts/view_wave.sh): Added `seq` option to view `sim_output/tb_npu_sequencer.vcd`.
+   - [scripts/run_sequencer_test.py](../scripts/run_sequencer_test.py): Python runner for dual-simulator and synthesis check.
+   - [scripts/sim_sequencer.sh](../scripts/sim_sequencer.sh): Executable wrapper.
+   - [scripts/view_wave.sh](../scripts/view_wave.sh): Added `seq` option to view `sim_output/tb_npu_sequencer.vcd`.
 
 ### 4. Verification Results & Synthesis Audit
 
@@ -559,9 +559,9 @@ Converting a 32-bit accumulated sum $A_{32}$ to an 8-bit quantized activation $Y
    - Suite 4: Concurrent readback during active write verifying double-buffer isolation.
 
 5. **Automated Runner & Scripts:**
-   - [scripts/run_epilogue_test.py](file:///Users/dhruv/Documents/int8_npu/scripts/run_epilogue_test.py): Dual-simulator runner and Yosys synthesis auditor.
-   - [scripts/sim_epilogue.sh](file:///Users/dhruv/Documents/int8_npu/scripts/sim_epilogue.sh): Standalone bash runner.
-   - [scripts/view_wave.sh](file:///Users/dhruv/Documents/int8_npu/scripts/view_wave.sh): Added `epi` target to inspect `sim_output/tb_npu_epilogue.vcd`.
+   - [scripts/run_epilogue_test.py](../scripts/run_epilogue_test.py): Dual-simulator runner and Yosys synthesis auditor.
+   - [scripts/sim_epilogue.sh](../scripts/sim_epilogue.sh): Standalone bash runner.
+   - [scripts/view_wave.sh](../scripts/view_wave.sh): Added `epi` target to inspect `sim_output/tb_npu_epilogue.vcd`.
 
 ### 4. Verification Results & Synthesis Audit
 
