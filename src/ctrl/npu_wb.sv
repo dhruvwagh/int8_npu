@@ -62,7 +62,8 @@ module npu_wb #(
   assign obuf_rd_addr = rd_cnt[AW-1:0];
 
   assign mem_req   = active && (fifo_cnt != 0);
-  assign mem_addr  = base_reg + (ADDR_W'(wr_cnt) << 4);
+  localparam int WORD_SHIFT = $clog2(MEM_DW / 8);     // bytes per memory word
+  assign mem_addr  = base_reg + (ADDR_W'(wr_cnt) << WORD_SHIFT);
   assign mem_wdata = fifo_q[fifo_rd_ptr];
 
   assign wb_busy = active;

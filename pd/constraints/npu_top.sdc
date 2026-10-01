@@ -29,3 +29,17 @@ set_load 0.02 [all_outputs]
 
 set_false_path -from [get_ports rst_n]
 set_ideal_network [get_ports rst_n]
+
+# Layer configuration used by the epilogue (RQ_MULT, RQ_SHIFT, FLAGS) is
+# write-protected while the NPU is busy (npu_csr), so it is static whenever
+# the datapath samples it. Its first use is a drain, at least CAP_DELAY (18)
+# cycles after start. Allow 4 cycles; 4 is conservative.
+# (Yosys autoname names each flop after the signal it drives: rq_mult,
+# rq_shift_q, and the FLAGS bits bias_en / relu_en / signed_act.)
+set cfg_regs [get_cells -quiet {u_csr/*rq_mult* u_csr/*rq_shift_q* u_csr/*flags_q*
+                                u_csr/*bias_en* u_csr/*relu_en* u_csr/*signed_act*}]
+if {[llength $cfg_regs] > 0} {
+  set_multicycle_path 4 -setup -from $cfg_regs
+  set_multicycle_path 3 -hold  -from $cfg_regs
+}
+puts "SDC: [llength $cfg_regs] static configuration registers get 4-cycle setup paths"

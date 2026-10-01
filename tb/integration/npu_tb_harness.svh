@@ -11,15 +11,19 @@
 // Author: Dhruv Wagh
 // ============================================================================
 
-  localparam int ARR_M      = 16;
-  localparam int ARR_N      = 16;
+`ifndef TB_ARR
+  `define TB_ARR 16
+`endif
+  localparam int ARR_M      = `TB_ARR;
+  localparam int ARR_N      = `TB_ARR;
   localparam int K_TILE_MAX = 128;
-  localparam int MEM_DW     = 128;
+  localparam int MEM_DW     = ARR_M * 8;       // one panel word per beat
+  localparam int BS         = $clog2(MEM_DW / 8);  // byte-address shift of a word
   localparam int ADDR_W     = 32;
 `ifndef TB_MEM_WORDS
   `define TB_MEM_WORDS 65536
 `endif
-  localparam int MEM_WORDS  = `TB_MEM_WORDS;   // tensor memory (16 B words)
+  localparam int MEM_WORDS  = `TB_MEM_WORDS;   // tensor memory (MEM_DW-bit words)
   localparam int RQ_DEPTH   = 64;              // memory model response queue
   localparam int TIMEOUT    = 2_000_000;       // cycles per layer
 
@@ -82,17 +86,17 @@
     end else begin
       // Accept a request presented this cycle
       if (mem_req && mem_ready) begin
-        if (mem_addr[3:0] != 0 || (mem_addr >> 4) >= MEM_WORDS) begin
+        if (mem_addr[BS-1:0] != 0 || (mem_addr >> BS) >= MEM_WORDS) begin
           mem_bad_addr++;
         end else if (mem_we) begin
-          mem[mem_addr >> 4] = mem_wdata;
+          mem[mem_addr >> BS] = mem_wdata;
           mem_writes++;
         end else begin
           longint t;
           t = cycle + mem_lat + ((mem_jit > 0) ? ($urandom % (mem_jit + 1)) : 0);
           if (t <= last_rsp_time) t = last_rsp_time + 1;   // in order, 1 beat/cycle
           last_rsp_time = t;
-          rq_data[rq_tail] = mem[mem_addr >> 4];
+          rq_data[rq_tail] = mem[mem_addr >> BS];
           rq_time[rq_tail] = t;
           rq_tail = (rq_tail + 1) % RQ_DEPTH;
           rq_cnt++;
@@ -199,14 +203,14 @@
   // --------------------------------------------------------------------------
   function automatic logic [7:0] mem_get_byte(input logic [31:0] addr);
     logic [MEM_DW-1:0] w;
-    w = mem[addr >> 4];
-    return w[addr[3:0]*8 +: 8];
+    w = mem[addr >> BS];
+    return w[addr[BS-1:0]*8 +: 8];
   endfunction
 
   task automatic mem_set_byte(input logic [31:0] addr, input logic [7:0] v);
     logic [MEM_DW-1:0] w;
-    w = mem[addr >> 4];
-    w[addr[3:0]*8 +: 8] = v;
-    mem[addr >> 4] = w;
+    w = mem[addr >> BS];
+    w[addr[BS-1:0]*8 +: 8] = v;
+    mem[addr >> BS] = w;
   endtask
 

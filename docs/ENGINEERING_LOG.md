@@ -777,3 +777,180 @@ With the control overhead gone, every MNIST layer is now limited by the single 1
 - **fc:** N = 1, so every weight byte is used once. Each K tile moves 128 weight + 128 activation words for 128 compute cycles on one array column.
 
 This is the roofline behaviour that milestone 12 will quantify with the `MEM_DW` sweep and the performance model.
+
+---
+
+## 2026-09-30 — Milestone 12: Cycle-Level Performance Model, Validation, Design-Space Exploration
+
+### 1. Context & Objectives
+- **Target:** a performance model that predicts RTL cycle counts, validated against the hardware performance counters, then used to explore design points the RTL does not implement.
+- **Exit criterion:** model matches `PERF_CYCLES` per layer; sweeps over port width, K tile depth and batch size, with the bottleneck explained.
+
+### 2. The model (`model/perf_model.py`)
+- Models control and data movement only (no arithmetic): the three fetch engines, the memory arbiter and its 8-deep outstanding-read limit, the sequencer's fetch/compute controllers and mailbox, the capture wave and drain timer, the epilogue pipeline, the obuf queue and the writeback FIFO.
+- Every state element updates once per cycle from the previous cycle's values, the same register-transfer timing as the RTL.
+- It generalises beyond the RTL for exploration: memory port widths other than one panel word per beat, and other array sizes / K tile depths.
+- Runs MNIST in ~70 ms (Verilator RTL: ~0.25 s per image; iverilog: seconds).
+- `layer_bounds()` gives analytic lower bounds per resource (compute stream, memory port beats, drain) to explain *why* a layer takes what it takes.
+
+### 3. Validation (`scripts/validate_perf_model.py`)
+- **Deterministic memory** (fixed latency 1, 3, 6; always ready): 450 layers (directed MNIST shapes, K split, edge tiles, random shapes up to 48×48×300) — **cycle-exact on all 450**.
+- **Random memory** (jitter, 20–100% `mem_ready`): the RTL and model use different random streams, so single runs differ by chance. Over 103 layers ≥ 500 cycles, one RTL run vs. the model's 8-seed mean: mean |error| 2.0%, mean signed error −1.2%.
+
+### 4. Design-space exploration (`scripts/dse.py` → `docs/results/dse.md`, `docs/figures/`)
+
+**Memory port width** (MNIST, ideal memory, 50 MHz):
+
+| Port (B/cycle) | Cycles/image | Array utilization | Images/s |
+|---|---|---|---|
+| 4 | 16,788 | 6.7% | 2,978 |
+| 8 | 8,791 | 12.9% | 5,688 |
+| **16 (implemented)** | **4,767** | **23.8%** | **10,489** |
+| 32 | 3,164 | 35.8% | 15,803 |
+| 64 | 3,017 | 37.6% | 16,573 |
+
+Throughput scales almost linearly with port width up to 16 B, gains 1.5× more at 32 B, then saturates. Past 32 B the bottleneck moves to compute and drain: conv1 uses only 8 of 16 rows with K = 9, and every output tile costs a 16-cycle drain.
+
+**Roofline** (`docs/figures/roofline.png`): at 16 B/cycle every layer is memory-bound and runs at **78–92% of its bandwidth ceiling**: conv1 78%, conv2 86%, fc 89%. The pipelined design is close to what its memory port allows. Moving further up requires more bandwidth or more reuse, not better control.
+
+**K tile depth.** The OpenRAM macro is 256 words deep, so K_TILE ≤ 256 costs no SRAM area:
+
+| K_TILE | MNIST cycles/image | Why |
+|---|---|---|
+| 32 | 5,919 | conv2 (K = 72) splits along K with N > 16 → K-innermost loop order → weights refetched every tile |
+| 64 | 6,185 | same effect, and fewer tiles to overlap |
+| **128** | **4,767** | conv2 fits in one K tile; weights resident across all 13 N tiles |
+| 256 | 4,874 | fc has fewer, longer tiles: the first fetch is exposed longer |
+
+128 is the best of these for MNIST, and deeper is not free even though the area is.
+
+**Batch size** (`docs/figures/batch_sweep.png`): fc utilization grows 1.7% → 27.4% from batch 1 to 16 (N = batch fills the array columns). Throughput rises to 17,504 images/s (1.67×). **Beyond 16 it stalls**: with N > 16 and K > K_TILE the sequencer switches to K-innermost order, which gives up weight reuse across N tiles, so fc traffic doubles. Fixing that would need either K_TILE ≥ K (a 784-deep weight buffer) or partial sums leaving the array — a concrete, measured next step.
+
+### 5. What the model says to build next
+1. Port width is the first-order lever up to 32 B/cycle (+50% throughput).
+2. conv1 writes more than it reads: M = 8 fills half of each 16-byte output word, and outputs (6.3 KB useful, 12.5 KB moved) outweigh inputs. A packed output layout for M < 16 would cut conv1's traffic by about a third.
+3. A loop order that keeps weights resident when K is split and N > 16 is what batch > 16 needs.
+
+---
+
+## 2026-09-30 — Milestone 9: Assertions, Functional Coverage, Parameterization, Regression
+
+### 1. Context & Objectives
+- **Target:** turn the tests into a regression that proves its own thoroughness: assertions on the invariants the pipelined design relies on, functional coverage of its corner cases, and verification of a second array size.
+- **Exit criterion:** one command runs every suite; all pass; every coverage point is hit.
+
+### 2. Assertions (`tb/sva/npu_sva.sv`, bound into `npu_top`, Verilator `--assert`)
+| Assertion | Invariant |
+|---|---|
+| `a_act_swap_after_fetch`, `a_wgt_swap_after_fetch` | a bank becomes the read bank only after its fetch has landed |
+| `a_reads_lockstep` | weight and activation buffers are read together |
+| `a_wave_no_read` | a clear/capture wave carries zero operands |
+| `a_blocked_wave_waits`, `a_wave_spacing` | capture waves are ≥ CAP_DELAY + 1 cycles apart, so drained shadow registers are never overwritten |
+| `a_drain_free`, `a_wbq_free`, `a_wb_idle` | the output path never overwrites a tile in flight |
+| `a_bias_slot_safe` | the bias slot being loaded is never the one being drained |
+| `a_mem_aligned` | every memory access is word-aligned |
+| `a_done_xor_err` | done and err are never raised together |
+| `a_axi_b_hold`, `a_axi_r_hold` | AXI-Lite B/R responses hold until accepted |
+
+Checked by mutation: letting `drain_ready` ignore the writeback queue makes `a_drain_free` fire and stop the simulation.
+
+### 3. Functional coverage
+15 coverage points, counted in every Verilator run and summed by the regression script. They cover the pipelined sequencer's corner cases:
+- back-to-back K slices
+- a wave blocked by the previous drain
+- a drain blocked by the output path
+- the next tile popped in the same cycle as a wave
+- compute starved by fetch
+- both bias slots
+- the K-innermost loop order
+- the writeback queue full while writeback runs
+- memory backpressure
+- the outstanding-read limit reached
+- weight reuse
+- partial M and N tiles
+- layer done and error
+
+**One hole was found.** "Pop in the wave cycle" never occurred: fetch always finishes after compute unless a wave is blocked by the drain. A directed drain-bound layer (16×256×4) was added to close it.
+
+The CSR block now write-protects the layer configuration while busy (SLVERR). This is tested: a write to RQ_MULT mid-layer must return SLVERR and the layer must still be bit-exact. M10 relies on this property.
+
+### 4. Parameterization verified at 8×8
+Running at ARR = 8 found two hardcoded 16-byte word steps (`<< 4` in `npu_fetch` and `npu_wb`), now derived from `MEM_DW`. The golden model (`set_arr`), the testbench harness (`TB_ARR`) and the runner (`--arr`) are parameterized. The 8×8 configuration passes 330 random layers plus harsh-memory and iverilog runs, all bit-exact.
+
+### 5. Regression (`scripts/run_regression.py`)
+14 suites:
+- 5 unit suites
+- 16×16 integration: 3 seeds, harsh memory, and an iverilog run
+- 8×8 integration: normal and harsh memory
+- MNIST
+- performance-model-vs-RTL validation
+
+Result: **14/14 pass, 15/15 coverage points hit, about 2 minutes.**
+
+---
+
+## 2026-09-30 → 2026-10-01 — Milestone 10: sky130 Synthesis, Placement-Aware STA, Timing Closure
+
+### 1. Context & Objectives
+- **Target:** synthesize to SkyWater 130 nm HD with real SRAM macros, run static timing at three corners for a 50 MHz clock (20 ns), root-cause the critical paths, and fix them.
+- **Scope:** no CTS or routing. The clock is ideal with stated uncertainty; wires are estimated from a global placement.
+
+### 2. Flow
+| Step | Tool | Notes |
+|---|---|---|
+| Synthesis | Yosys 0.63 (`pd/synth/synth.tcl`) | sky130_fd_sc_hd TT library; delay-driven ABC with fanout buffering and sizing; hierarchy kept for a per-module area report; `autoname` so constraints can name registers |
+| SRAM | OpenRAM `sky130_sram_1kbyte_1rw1r_32x256_8` | 4 macros per 128×128 bank, 16 total; TT liberty only, used at all corners (stated limitation). The 256 B obuf banks are register files (`USE_MACRO = 0`): 8 more macros would have cost ~1.5 mm² |
+| Placement | OpenROAD `global_placement` at 50% utilization | only so the resizer can build buffer trees and parasitics can be estimated (met2 RC) |
+| Repair | `repair_design`, `repair_timing` (setup, then hold) | |
+| STA | OpenSTA inside OpenROAD | ss_100C_1v60 / tt_025C_1v80 / ff_n40C_1v95; setup uncertainty 0.5 ns, hold 0.1 ns; I/O at 30% of the period |
+
+Tool setup on macOS: OpenSTA was built from source (with CUDD). OpenROAD came from the litex-hub conda channel (x86 build running under Rosetta). The sky130 libraries came via `volare`.
+
+### 3. Timing-closure history (what each optimization did)
+Each row is a full synthesis + STA run at 20 ns. WNS/TNS are setup at the slow corner (ss).
+
+| # | Change | Why | ss WNS | ss TNS |
+|---|---|---|---|---|
+| 0 | First flow: wire-load model, no placement | `repair_design` could not build buffer trees without placement; one enable net drove ~12K flops (220 ns slew) | −180 ns | — |
+| 1 | **Free-running array** (`HAS_EN = 0`): removed the array-wide enable; idle cycles feed zero operands so accumulators hold (acc += 0) | Removes a 12K-fanout net and ~12K enable muxes; skew area −31% | (fanout fixed) | |
+| 2 | **ABC buffering + global placement before repair**. ABC cannot buffer flop outputs (they are its primary inputs), so CSR config bits (~6K fanout) and clear taps (~700) stayed unbuffered until the resizer had placement | 8,271 buffers inserted, 107K → 232 DRV violations | −3.44 | −930 |
+| 3 | **Operand register stage** before the array | The OpenRAM macros drive read data from the *falling* clock edge, and row/column 0 have no skew register, so PE(0,0)'s 8×8 MAC (~11 ns at ss) had half a cycle | | |
+| 4 | **Static configuration**: CSR write-protects RQ_MULT, RQ_SHIFT and FLAGS while busy (SLVERR, tested); SDC gives those registers 4-cycle multicycle paths | The critical path was a config bit fanning out to all 16 epilogue multipliers: 11 ns of buffer chain plus 11.7 ns of multiplier. The config cannot change while the datapath uses it, and is first used ≥ 18 cycles after start | −2.32 | −609 |
+| 5 | **Bias slot copied at drain start**; epilogue reads RQ_SHIFT/RELU/SIGNED directly instead of pipelined copies | Removes the 512-bit slot mux and a high-fanout shift register from the multiply/round paths | −1.55 | −115 |
+| 6 | SDC fix: `autoname` named the FLAGS flops `bias_en/relu_en/signed_act`, so the multicycle pattern missed them | Constraint bug, not a design change | −1.11 | −89 |
+| 7 | **Epilogue 3 stages**: bias add, multiply, round | Real datapath: `drain_data` → add → 33×32 multiply in one cycle | −0.53 | −6.0 |
+| 8 | **Epilogue rounding restructured and split (4 stages)**: `(|p| >> s) + |p|[s−1]` instead of `(|p| + 2^(s−1)) >> s`, then register a 9-bit clamped magnitude + sign, then sign/ReLU/saturate | Removes a 65-bit add before the shifter and 64-bit compares; register cost 10 flops/lane instead of 64. Bit-exact on all 1,332 golden vectors | **+0.066 (met)** | 0 violating endpoints |
+
+Typical and fast corners met setup from step 5 onward, with zero violations of any check type from step 6. Hold is clean at all corners throughout (min +0.14 ns at ff).
+
+### 4. Final result — timing closed at 50 MHz, all corners
+
+| Corner | Setup WNS | Hold WNS | Violating checks (setup, hold, recovery/removal, pulse width, period) |
+|---|---|---|---|
+| ss_100C_1v60 | **+0.066 ns** | +0.623 ns | 0 |
+| tt_025C_1v80 | +7.93 ns | +0.264 ns | 0 |
+| ff_n40C_1v95 | +8.37 ns | +0.138 ns | 0 |
+
+- **Critical path now:** epilogue stage 2a (`prod_s1` → |x| → variable shift → rounding bit → clamp → `mag_s2`): a 65-bit negate followed by a barrel shifter, with 0.07 ns to spare at the slow corner. The next lever, if needed, is to keep the product in sign-magnitude form out of the multiplier to drop the negate.
+- **Typical-corner headroom:** 20 − 7.93 ≈ 12.1 ns of logic, i.e. roughly 80 MHz at TT before CTS/routing effects.
+- **TNS caveat:** this OpenROAD build's `total_negative_slack_corner_cmd` reports values inconsistent with its own path reports (e.g. positive "TNS" at tt). The per-check violator reports (`pd/reports/sta_violators_<corner>.txt`) are the authority here, and they are empty at every corner.
+
+**Area (Yosys, sky130 HD + OpenRAM, before placement buffering): 6.00 mm²**
+
+| Block | Area (mm²) | Share |
+|---|---|---|
+| SRAM macros (16 × 1 KB OpenRAM) | 3.05 | 51% |
+| PE array (256 × 5,006 µm²) | 1.28 | 21% |
+| Epilogue (16 lanes, 33×32 multipliers) | ~1.0 | 17% |
+| Drain shadow + column mux | 0.36 | 6% |
+| obuf register files | 0.16 | 3% |
+| Sequencer, CSR, fetch, writeback, arbiter, skew | ~0.15 | 2% |
+
+Logic alone is ~2.95 mm²; the epilogue is the largest logic block after the array and is only busy 16 of every ≥19 cycles per tile. Time-multiplexing it (e.g. 4 lanes over 4 cycles) would be the main area optimization if area mattered more than drain latency.
+
+Reports: `pd/reports/synth_area.txt`, `pd/reports/sta_summary.txt`, `sta_setup_ss_final.txt`, `sta_hold_ff.txt`, `sta_violators_*.txt`. Reproduce with `python3 scripts/run_synth.py --period 20` (~11 min synthesis + ~60 min placement/repair/STA).
+
+### 5. Side effect on performance
+Each epilogue stage adds one cycle of latency per output tile, which does not change throughput. One effect showed up in the cycle counts: conv1 got *faster*, 1,597 → 1,436 cycles. The performance model shows the same memory beats but port idle time dropping from 363 to 198 cycles. conv1 is port-bound, and the extra cycle shifts when writeback bursts start, so they fill gaps in the fetch stream instead of colliding with it. The lesson is that conv1's speed depends on traffic phase, not just bandwidth. An explicit fix, such as a third activation bank to let prefetch start earlier, would make it independent of that luck. MNIST: **4,610 cycles/image** (ideal memory), bit-exact.
+
+The M12 tables were measured on the 2-stage epilogue. `scripts/dse.py` was re-run on the final design; `docs/results/dse.md` and the figures are current. The conclusions are unchanged, but absolute numbers moved slightly (e.g. a 32 B/cycle port now gives 3,266 cycles/image, a 1.41× speedup).

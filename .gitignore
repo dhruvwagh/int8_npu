@@ -49,3 +49,5 @@ data/
 pd/netlist/
 pd/sram/*_TT_as_*.lib
 pd/reports/*.log
+pd/fpga/*.json
+pd/fpga/*.config

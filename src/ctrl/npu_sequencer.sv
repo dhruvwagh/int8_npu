@@ -19,7 +19,7 @@
 //                          PE's result into the drain shadow registers and
 //                          clearing it, so the next tile can follow immediately.
 //
-//              DRAIN scheduling: drain_start fires ARR_M+2 cycles after a wave is
+//              DRAIN scheduling: drain_start fires ARR_M+3 cycles after a wave is
 //                          issued (column 0 of the shadow is then complete) once
 //                          the output path is free. A new wave waits until the
 //                          previous drain has started, or it would overwrite the
@@ -115,11 +115,13 @@ module npu_sequencer #(
 
   localparam int KAW    = $clog2(K_TILE_MAX);
   localparam int WORD_B = ARR_M;                // Bytes per 128-bit panel word
-  // A wave issued in cycle x is visible at x+1, aligned with operand data at
-  // x+2 (PE(0,0)), and reaches PE(ARR_M-1,0) at x+ARR_M+1, where the shadow
-  // register captures at the end of the cycle. drain_start must be visible
-  // at x+ARR_M+2 or later: the timer below fires at x+ARR_M+1.
-  localparam int CAP_DELAY = ARR_M + 1;
+  // A wave issued in cycle x is visible at x+1, aligned with the buffer read
+  // data at x+2, registered in the operand stage, and reaches PE(0,0) at x+3
+  // and PE(ARR_M-1,0) at x+ARR_M+2, where the shadow register captures at the
+  // end of the cycle. drain_start must be visible at x+ARR_M+3 or later: the
+  // timer below fires at x+ARR_M+2.
+  localparam int OPERAND_LAT = 2;              // SRAM read + operand register
+  localparam int CAP_DELAY   = ARR_M + OPERAND_LAT;
 
   initial begin
     if (ARR_M != ARR_N) $fatal(1, "npu_sequencer: panel layout assumes ARR_M == ARR_N");

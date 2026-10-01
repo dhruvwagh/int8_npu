@@ -261,6 +261,24 @@ module npu_top #(
     end
   end
 
+  // Operand register stage. The OpenRAM macros drive read data from the
+  // falling clock edge, and row 0 / column 0 have no skew register, so without
+  // this stage PE(0,0)'s multiply-accumulate would get only half a cycle.
+  logic signed [ARR_M*DATA_W-1:0] row_operands_q;
+  logic signed [ARR_N*DATA_W-1:0] col_operands_q;
+  logic                           clr_operand_q;
+  always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+      row_operands_q <= '0;
+      col_operands_q <= '0;
+      clr_operand_q  <= 1'b0;
+    end else begin
+      row_operands_q <= row_operands;
+      col_operands_q <= col_operands;
+      clr_operand_q  <= clr_aligned;
+    end
+  end
+
   // --------------------------------------------------------------------------
   // Skew + systolic array + drain
   // --------------------------------------------------------------------------
@@ -274,8 +292,8 @@ module npu_top #(
   // The skew and array free-run (HAS_EN = 0). Idle cycles feed zero operands,
   // so accumulators hold (acc += 0) without a 12K-fanout enable net.
   npu_skew #(.ARR_M(ARR_M), .ARR_N(ARR_N), .DATA_W(DATA_W), .HAS_EN(1'b0)) u_skew (
-    .clk, .rst_n, .en(1'b1), .clr_in(clr_aligned),
-    .a_in(row_operands), .b_in(col_operands),
+    .clk, .rst_n, .en(1'b1), .clr_in(clr_operand_q),
+    .a_in(row_operands_q), .b_in(col_operands_q),
     .a_skewed, .b_skewed, .clr_skewed
   );
 
@@ -303,8 +321,10 @@ module npu_top #(
   logic [OAW-1:0]              epi_col_idx;
   logic signed [MEM_DW-1:0]    epi_data;
 
-  // Output tile bookkeeping, latched at drain_start and handed to writeback
-  logic              epi_bias_slot;
+  // Output tile bookkeeping, latched at drain_start and handed to writeback.
+  // The draining panel's bias is copied out of its slot at drain_start, so
+  // the slot mux is not in the epilogue's multiply path.
+  logic [ARR_M*32-1:0] epi_bias;
   logic [ADDR_W-1:0] dr_c_addr;
   logic [7:0]        dr_n_len;
 
@@ -312,7 +332,7 @@ module npu_top #(
     .clk, .rst_n,
     .bias_en, .rq_mult, .rq_shift, .relu_en, .signed_act,
     .in_valid(drain_valid), .in_col_idx(drain_col_idx),
-    .in_acc(drain_data), .in_bias(bias_regs[epi_bias_slot]),
+    .in_acc(drain_data), .in_bias(epi_bias),
     .out_valid(epi_valid), .out_col_idx(epi_col_idx), .out_data(epi_data)
   );
 
@@ -345,7 +365,7 @@ module npu_top #(
   always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
       drain_inflight <= 1'b0;
-      epi_bias_slot  <= 1'b0;
+      epi_bias       <= '0;
       dr_c_addr      <= '0;
       dr_n_len       <= '0;
       wbq_valid      <= 1'b0;
@@ -361,7 +381,7 @@ module npu_top #(
 
       if (drain_start) begin
         drain_inflight <= 1'b1;
-        epi_bias_slot  <= drain_bias_slot;
+        epi_bias       <= bias_regs[drain_bias_slot];
         dr_c_addr      <= drain_c_addr;
         dr_n_len       <= drain_n_len;
       end

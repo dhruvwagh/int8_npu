@@ -24,15 +24,22 @@ import numpy as np
 
 from model.golden_epilogue import epilogue_vector
 
-ARR = 16          # ARR_M == ARR_N
-WORD_B = 16       # bytes per 128-bit memory word
+ARR = 16          # ARR_M == ARR_N (panel width)
+WORD_B = 16       # bytes per memory word = ARR (one panel word per beat)
+
+
+def set_arr(arr: int) -> None:
+    """Select the array size the layout is packed for (8 or 16 in the RTL tests)."""
+    global ARR, WORD_B
+    ARR, WORD_B = arr, arr
 
 
 def ceil_div(a: int, b: int) -> int:
     return -(-a // b)
 
 
-def pad_to(x: int, m: int = ARR) -> int:
+def pad_to(x: int, m: int = None) -> int:
+    m = ARR if m is None else m
     return ceil_div(x, m) * m
 
 
@@ -128,11 +135,12 @@ class MemImage:
     """Byte-addressed tensor memory made of 128-bit words."""
 
     def __init__(self, size_bytes: int):
-        assert size_bytes % WORD_B == 0
+        assert size_bytes % 64 == 0
         self.data = bytearray(size_bytes)
         self.brk = 0
 
     def alloc(self, nbytes: int, align: int = 64) -> int:
+        align = max(align, WORD_B)
         base = pad_to(self.brk, align)
         self.brk = base + pad_to(nbytes, WORD_B)
         assert self.brk <= len(self.data), "memory image too small"

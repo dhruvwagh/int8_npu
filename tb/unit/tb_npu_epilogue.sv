@@ -23,7 +23,7 @@ module tb_npu_epilogue;
   localparam int DW     = ARR_M * DATA_W; // 128 bits
   localparam int WORDS  = 16;
   localparam int AW     = $clog2(WORDS);
-  localparam int EPI_LAT = 2;              // npu_epilogue pipeline latency (cycles)
+  localparam int EPI_LAT = 4;              // npu_epilogue pipeline latency (cycles)
 
   logic signed [7:0] tile_gold_t3 [ARR_M][ARR_N];  // Test 3 tile, re-checked in Test 4
 

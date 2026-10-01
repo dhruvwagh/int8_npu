@@ -50,6 +50,10 @@ setundef -zero
 splitnets
 opt_clean -purge
 
+# Name cells after the signals they drive (e.g. u_csr/rq_mult...) so the SDC
+# can refer to registers by function
+autoname
+
 tee -o pd/reports/synth_area${tag}.txt stat -liberty $lib -liberty $sram -top npu_top
 write_verilog -noattr -noexpr -nohex -nodec pd/netlist/npu_top${tag}.v
 

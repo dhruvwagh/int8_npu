@@ -111,8 +111,20 @@ module tb_npu_top;
     csr_wr(CSR_FLAGS, flags);
     csr_wr(CSR_CTRL, 32'h1);
 
+    // Config registers are write-protected while busy: a write must return
+    // SLVERR and must not disturb the running layer (checked bit-exact below)
+    errs = 0;
+    if (id == 2) begin
+      logic [1:0] resp;
+      axil_write(CSR_RQ_MULT, 32'h0, resp);
+      if (resp !== 2'b10) begin
+        $display("[FAIL] RQ_MULT write while busy returned resp %0d, expected SLVERR", resp);
+        errs++;
+      end
+    end
+
     wait_done(ok);
-    errs = (ok == 0) ? 1 : 0;
+    if (ok == 0) errs++;
     if (!irq) begin
       $display("[FAIL] irq not asserted after done");
       errs++;
@@ -122,7 +134,7 @@ module tb_npu_top;
     for (int w = 0; w < nwords; w++) begin
       if (mem[w] !== mem_exp[w]) begin
         if (shown < 5) begin
-          $display("       word %0d (addr 0x%05h): got %032h exp %032h", w, w * 16, mem[w], mem_exp[w]);
+          $display("       word %0d (addr 0x%05h): got %h exp %h", w, w * (MEM_DW / 8), mem[w], mem_exp[w]);
           shown++;
         end
         errs++;

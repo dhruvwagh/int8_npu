@@ -1,0 +1,20 @@
+npu_top STA, clock period 20.0 ns (50.0 MHz)
+Global placement at 50% utilization, placement-estimated parasitics (met2 RC),
+ideal clock: setup uncertainty 0.5 ns, hold uncertainty 0.1 ns.
+
+== after global placement, before repair
+  ss  setup WNS   -76.289 ns  TNS  -445887.250 ns   hold WNS    0.623 ns  TNS      0.000 ns
+  tt  setup WNS   -38.468 ns  TNS  -107047.453 ns   hold WNS    0.264 ns  TNS      0.000 ns
+  ff  setup WNS   -17.061 ns  TNS   -14304.679 ns   hold WNS    0.138 ns  TNS      0.000 ns
+== after repair_design (fanout/slew/cap)
+  ss  setup WNS    -0.506 ns  TNS       -4.117 ns   hold WNS    0.623 ns  TNS      0.000 ns
+  tt  setup WNS     7.931 ns  TNS        0.230 ns   hold WNS    0.264 ns  TNS      0.000 ns
+  ff  setup WNS     8.366 ns  TNS        0.005 ns   hold WNS    0.138 ns  TNS      0.000 ns
+== after repair_timing -setup
+  ss  setup WNS     0.066 ns  TNS       -0.966 ns   hold WNS    0.623 ns  TNS      0.000 ns
+  tt  setup WNS     7.931 ns  TNS        0.230 ns   hold WNS    0.264 ns  TNS      0.000 ns
+  ff  setup WNS     8.366 ns  TNS        0.005 ns   hold WNS    0.138 ns  TNS      0.000 ns
+== final (after hold repair)
+  ss  setup WNS     0.066 ns  TNS       -0.966 ns   hold WNS    0.623 ns  TNS      0.000 ns
+  tt  setup WNS     7.931 ns  TNS        0.230 ns   hold WNS    0.264 ns  TNS      0.000 ns
+  ff  setup WNS     8.366 ns  TNS        0.005 ns   hold WNS    0.138 ns  TNS      0.000 ns

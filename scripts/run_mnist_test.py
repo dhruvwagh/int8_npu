@@ -26,6 +26,8 @@ from model.golden_npu import MemImage, pack_a, pack_bias, pad_to  # noqa: E402
 
 VEC_DIR = os.path.join(REPO_ROOT, "tb", "vectors", "mnist")
 FILELIST = os.path.join(REPO_ROOT, "src", "npu.f")
+# Assertions + functional coverage, bound into npu_top (Verilator only)
+SVA = ["tb/sva/npu_sva.sv", "tb/sva/npu_sva_bind.sv"]
 TB = "tb/integration/tb_mnist.sv"
 
 # (M, N, K) of the three GEMMs
@@ -111,9 +113,9 @@ def main():
             sys.exit("[FAIL] iverilog compile")
         ok &= run(["vvp", "-n", "sim_output/tb_mnist.vvp"] + plus) == 0
     if args.simulator in ("verilator", "both"):
-        if run(["verilator", "--binary", "--timing", "-j", "0", "-O2",
+        if run(["verilator", "--binary", "--timing", "-j", "0", "-O2", "--assert",
                 "-Wno-TIMESCALEMOD", "-Wno-WIDTHEXPAND", "-Wno-WIDTHTRUNC", "-Wno-INITIALDLY",
-                "-Itb/integration", "--top-module", "tb_mnist", "-f", FILELIST, TB,
+                "-Itb/integration", "--top-module", "tb_mnist", "-f", FILELIST, TB, *SVA,
                 "-Mdir", "sim_output/verilator_mnist"], quiet=True) != 0:
             sys.exit("[FAIL] verilator compile")
         ok &= run(["./sim_output/verilator_mnist/Vtb_mnist"] + plus) == 0

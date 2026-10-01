@@ -20,10 +20,12 @@ import numpy as np
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, REPO_ROOT)
 
-from model.golden_npu import LayerCfg, build_layer_job, choose_requant, pad_to  # noqa: E402
+from model.golden_npu import LayerCfg, build_layer_job, choose_requant, pad_to, set_arr  # noqa: E402
 
 VEC_DIR = os.path.join(REPO_ROOT, "tb", "vectors", "top")
 FILELIST = os.path.join(REPO_ROOT, "src", "npu.f")
+# Assertions + functional coverage, bound into npu_top (Verilator only)
+SVA = ["tb/sva/npu_sva.sv", "tb/sva/npu_sva_bind.sv"]
 TB = "tb/integration/tb_npu_top.sv"
 
 
@@ -39,7 +41,7 @@ def make_layer(rng, M, N, K, relu=True, bias=True, signed_act=True, sat_target=1
     return build_layer_job(A, B, bias_v, cfg)
 
 
-def generate(seed, n_random, ideal_mem=False, harsh_mem=False):
+def generate(seed, n_random, ideal_mem=False, harsh_mem=False, fixed_lat=None):
     rng = np.random.default_rng(seed)
     pyrng = random.Random(seed)
 
@@ -55,6 +57,7 @@ def generate(seed, n_random, ideal_mem=False, harsh_mem=False):
         (17, 33, 129, True, False, True, 100, "edges in M, N, K"),
         (33, 17, 256, False, True, True, 400, "saturating requant"),
         (12, 20, 40, True, True, False, 200, "unsigned output mode"),
+        (16, 256, 4, True, True, True, 100, "drain-bound: tiny K, many output tiles"),
     ]
     shapes = list(directed)
     for _ in range(n_random):
@@ -82,6 +85,8 @@ def generate(seed, n_random, ideal_mem=False, harsh_mem=False):
             lat, jit, rdy = 1, 0, 100
         else:
             lat, jit, rdy = pyrng.randint(1, 6), pyrng.choice([0, 0, 2, 5]), pyrng.choice([100, 100, 80, 50])
+            if fixed_lat is not None:
+                lat, jit, rdy = fixed_lat, 0, 100
             if harsh_mem:
                 lat, jit, rdy = pyrng.randint(4, 12), pyrng.choice([5, 10]), pyrng.choice([20, 35, 50])
         c = job.cfg
@@ -113,6 +118,10 @@ def main():
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--random", type=int, default=20, help="number of random layers")
     ap.add_argument("--vcd", action="store_true")
+    ap.add_argument("--arr", type=int, default=16, choices=[8, 16],
+                    help="array size (ARR_M = ARR_N) for DUT, golden model and memory layout")
+    ap.add_argument("--fixed-lat", type=int, default=None,
+                    help="deterministic memory: this read latency, no jitter, always ready")
     ap.add_argument("--harsh-mem", action="store_true",
                     help="long latency, large jitter, 20-50%% mem_ready (stresses overlap hazards)")
     ap.add_argument("--ideal-mem", action="store_true",
@@ -121,22 +130,24 @@ def main():
 
     os.chdir(REPO_ROOT)
     os.makedirs("sim_output", exist_ok=True)
-    print("== Generating layer jobs (seed %d)" % args.seed)
-    generate(args.seed, args.random, args.ideal_mem, args.harsh_mem)
+    set_arr(args.arr)
+    arr_def = [f"-DTB_ARR={args.arr}"]
+    print("== Generating layer jobs (seed %d, %dx%d array)" % (args.seed, args.arr, args.arr))
+    generate(args.seed, args.random, args.ideal_mem, args.harsh_mem, args.fixed_lat)
 
     plus = ["+vcd"] if args.vcd else []
     ok = True
     if args.simulator in ("iverilog", "both"):
         print("\n== Icarus Verilog")
-        if run(["iverilog", "-g2012", "-Itb/integration", "-o", "sim_output/tb_npu_top.vvp", "-s", "tb_npu_top",
+        if run(["iverilog", "-g2012", "-Itb/integration"] + arr_def + ["-o", "sim_output/tb_npu_top.vvp", "-s", "tb_npu_top",
                 "-c", FILELIST, TB], quiet=True) != 0:
             sys.exit("[FAIL] iverilog compile")
         ok &= run(["vvp", "-n", "sim_output/tb_npu_top.vvp"] + plus) == 0
     if args.simulator in ("verilator", "both"):
         print("\n== Verilator")
-        if run(["verilator", "--binary", "--timing", "-j", "0", "-O2",
+        if run(["verilator", "--binary", "--timing", "-j", "0", "-O2", "--assert",
                 "-Wno-TIMESCALEMOD", "-Wno-WIDTHEXPAND", "-Wno-WIDTHTRUNC", "-Wno-INITIALDLY",
-                "--top-module", "tb_npu_top", "-Itb/integration", "-f", FILELIST, TB,
+                "--top-module", "tb_npu_top", "-Itb/integration"] + arr_def + ["-f", FILELIST, TB, *SVA,
                 "-Mdir", "sim_output/verilator_top"], quiet=True) != 0:
             sys.exit("[FAIL] verilator compile")
         ok &= run(["./sim_output/verilator_top/Vtb_npu_top"] + plus) == 0

@@ -1,0 +1,155 @@
+Startpoint: u_skew/gen_b_skew[12].gen_b_delay.shift_reg[2][7]_sky130_fd_sc_hd__dfrtp_1_Q
+            (rising edge-triggered flip-flop clocked by clk)
+Endpoint: u_skew/gen_b_skew[12].gen_b_delay.shift_reg[3][7]_sky130_fd_sc_hd__dfrtp_1_Q
+          (rising edge-triggered flip-flop clocked by clk)
+Path Group: clk
+Path Type: min
+Corner: ff
+
+   Delay     Time   Description
+-----------------------------------------------------------
+   0.000    0.000   clock clk (rise edge)
+   0.000    0.000   clock network delay (ideal)
+   0.000    0.000 ^ u_skew/gen_b_skew[12].gen_b_delay.shift_reg[2][7]_sky130_fd_sc_hd__dfrtp_1_Q/CLK (sky130_fd_sc_hd__dfrtp_1)
+   0.221    0.221 ^ u_skew/gen_b_skew[12].gen_b_delay.shift_reg[2][7]_sky130_fd_sc_hd__dfrtp_1_Q/Q (sky130_fd_sc_hd__dfrtp_1)
+   0.000    0.221 ^ u_skew/gen_b_skew[12].gen_b_delay.shift_reg[3][7]_sky130_fd_sc_hd__dfrtp_1_Q/D (sky130_fd_sc_hd__dfrtp_1)
+            0.221   data arrival time
+
+   0.000    0.000   clock clk (rise edge)
+   0.000    0.000   clock network delay (ideal)
+   0.100    0.100   clock uncertainty
+   0.000    0.100   clock reconvergence pessimism
+            0.100 ^ u_skew/gen_b_skew[12].gen_b_delay.shift_reg[3][7]_sky130_fd_sc_hd__dfrtp_1_Q/CLK (sky130_fd_sc_hd__dfrtp_1)
+  -0.016    0.084   library hold time
+            0.084   data required time
+-----------------------------------------------------------
+            0.084   data required time
+           -0.221   data arrival time
+-----------------------------------------------------------
+            0.138   slack (MET)
+
+
+Startpoint: u_skew/gen_b_skew[8].gen_b_delay.shift_reg[4][1]_sky130_fd_sc_hd__dfrtp_1_Q
+            (rising edge-triggered flip-flop clocked by clk)
+Endpoint: u_skew/gen_b_skew[8].gen_b_delay.shift_reg[5][1]_sky130_fd_sc_hd__dfrtp_1_Q
+          (rising edge-triggered flip-flop clocked by clk)
+Path Group: clk
+Path Type: min
+Corner: ff
+
+   Delay     Time   Description
+-----------------------------------------------------------
+   0.000    0.000   clock clk (rise edge)
+   0.000    0.000   clock network delay (ideal)
+   0.000    0.000 ^ u_skew/gen_b_skew[8].gen_b_delay.shift_reg[4][1]_sky130_fd_sc_hd__dfrtp_1_Q/CLK (sky130_fd_sc_hd__dfrtp_1)
+   0.222    0.222 ^ u_skew/gen_b_skew[8].gen_b_delay.shift_reg[4][1]_sky130_fd_sc_hd__dfrtp_1_Q/Q (sky130_fd_sc_hd__dfrtp_1)
+   0.000    0.222 ^ u_skew/gen_b_skew[8].gen_b_delay.shift_reg[5][1]_sky130_fd_sc_hd__dfrtp_1_Q/D (sky130_fd_sc_hd__dfrtp_1)
+            0.222   data arrival time
+
+   0.000    0.000   clock clk (rise edge)
+   0.000    0.000   clock network delay (ideal)
+   0.100    0.100   clock uncertainty
+   0.000    0.100   clock reconvergence pessimism
+            0.100 ^ u_skew/gen_b_skew[8].gen_b_delay.shift_reg[5][1]_sky130_fd_sc_hd__dfrtp_1_Q/CLK (sky130_fd_sc_hd__dfrtp_1)
+  -0.016    0.084   library hold time
+            0.084   data required time
+-----------------------------------------------------------
+            0.084   data required time
+           -0.222   data arrival time
+-----------------------------------------------------------
+            0.138   slack (MET)
+
+
+Startpoint: u_skew/gen_a_skew[13].gen_a_delay.shift_reg[2][3]_sky130_fd_sc_hd__dfrtp_1_Q
+            (rising edge-triggered flip-flop clocked by clk)
+Endpoint: u_skew/gen_a_skew[13].gen_a_delay.shift_reg[3][3]_sky130_fd_sc_hd__dfrtp_1_Q
+          (rising edge-triggered flip-flop clocked by clk)
+Path Group: clk
+Path Type: min
+Corner: ff
+
+   Delay     Time   Description
+-----------------------------------------------------------
+   0.000    0.000   clock clk (rise edge)
+   0.000    0.000   clock network delay (ideal)
+   0.000    0.000 ^ u_skew/gen_a_skew[13].gen_a_delay.shift_reg[2][3]_sky130_fd_sc_hd__dfrtp_1_Q/CLK (sky130_fd_sc_hd__dfrtp_1)
+   0.222    0.222 ^ u_skew/gen_a_skew[13].gen_a_delay.shift_reg[2][3]_sky130_fd_sc_hd__dfrtp_1_Q/Q (sky130_fd_sc_hd__dfrtp_1)
+   0.000    0.222 ^ u_skew/gen_a_skew[13].gen_a_delay.shift_reg[3][3]_sky130_fd_sc_hd__dfrtp_1_Q/D (sky130_fd_sc_hd__dfrtp_1)
+            0.222   data arrival time
+
+   0.000    0.000   clock clk (rise edge)
+   0.000    0.000   clock network delay (ideal)
+   0.100    0.100   clock uncertainty
+   0.000    0.100   clock reconvergence pessimism
+            0.100 ^ u_skew/gen_a_skew[13].gen_a_delay.shift_reg[3][3]_sky130_fd_sc_hd__dfrtp_1_Q/CLK (sky130_fd_sc_hd__dfrtp_1)
+  -0.016    0.084   library hold time
+            0.084   data required time
+-----------------------------------------------------------
+            0.084   data required time
+           -0.222   data arrival time
+-----------------------------------------------------------
+            0.138   slack (MET)
+
+
+Startpoint: u_skew/gen_b_skew[14].gen_b_delay.shift_reg[6][2]_sky130_fd_sc_hd__dfrtp_1_Q
+            (rising edge-triggered flip-flop clocked by clk)
+Endpoint: u_skew/gen_b_skew[14].gen_b_delay.shift_reg[7][2]_sky130_fd_sc_hd__dfrtp_1_Q
+          (rising edge-triggered flip-flop clocked by clk)
+Path Group: clk
+Path Type: min
+Corner: ff
+
+   Delay     Time   Description
+-----------------------------------------------------------
+   0.000    0.000   clock clk (rise edge)
+   0.000    0.000   clock network delay (ideal)
+   0.000    0.000 ^ u_skew/gen_b_skew[14].gen_b_delay.shift_reg[6][2]_sky130_fd_sc_hd__dfrtp_1_Q/CLK (sky130_fd_sc_hd__dfrtp_1)
+   0.222    0.222 ^ u_skew/gen_b_skew[14].gen_b_delay.shift_reg[6][2]_sky130_fd_sc_hd__dfrtp_1_Q/Q (sky130_fd_sc_hd__dfrtp_1)
+   0.000    0.222 ^ u_skew/gen_b_skew[14].gen_b_delay.shift_reg[7][2]_sky130_fd_sc_hd__dfrtp_1_Q/D (sky130_fd_sc_hd__dfrtp_1)
+            0.222   data arrival time
+
+   0.000    0.000   clock clk (rise edge)
+   0.000    0.000   clock network delay (ideal)
+   0.100    0.100   clock uncertainty
+   0.000    0.100   clock reconvergence pessimism
+            0.100 ^ u_skew/gen_b_skew[14].gen_b_delay.shift_reg[7][2]_sky130_fd_sc_hd__dfrtp_1_Q/CLK (sky130_fd_sc_hd__dfrtp_1)
+  -0.016    0.084   library hold time
+            0.084   data required time
+-----------------------------------------------------------
+            0.084   data required time
+           -0.222   data arrival time
+-----------------------------------------------------------
+            0.138   slack (MET)
+
+
+Startpoint: u_skew/gen_b_skew[8].gen_b_delay.shift_reg[4][4]_sky130_fd_sc_hd__dfrtp_1_Q
+            (rising edge-triggered flip-flop clocked by clk)
+Endpoint: u_skew/gen_b_skew[8].gen_b_delay.shift_reg[5][4]_sky130_fd_sc_hd__dfrtp_1_Q
+          (rising edge-triggered flip-flop clocked by clk)
+Path Group: clk
+Path Type: min
+Corner: ff
+
+   Delay     Time   Description
+-----------------------------------------------------------
+   0.000    0.000   clock clk (rise edge)
+   0.000    0.000   clock network delay (ideal)
+   0.000    0.000 ^ u_skew/gen_b_skew[8].gen_b_delay.shift_reg[4][4]_sky130_fd_sc_hd__dfrtp_1_Q/CLK (sky130_fd_sc_hd__dfrtp_1)
+   0.222    0.222 ^ u_skew/gen_b_skew[8].gen_b_delay.shift_reg[4][4]_sky130_fd_sc_hd__dfrtp_1_Q/Q (sky130_fd_sc_hd__dfrtp_1)
+   0.000    0.222 ^ u_skew/gen_b_skew[8].gen_b_delay.shift_reg[5][4]_sky130_fd_sc_hd__dfrtp_1_Q/D (sky130_fd_sc_hd__dfrtp_1)
+            0.222   data arrival time
+
+   0.000    0.000   clock clk (rise edge)
+   0.000    0.000   clock network delay (ideal)
+   0.100    0.100   clock uncertainty
+   0.000    0.100   clock reconvergence pessimism
+            0.100 ^ u_skew/gen_b_skew[8].gen_b_delay.shift_reg[5][4]_sky130_fd_sc_hd__dfrtp_1_Q/CLK (sky130_fd_sc_hd__dfrtp_1)
+  -0.016    0.084   library hold time
+            0.084   data required time
+-----------------------------------------------------------
+            0.084   data required time
+           -0.222   data arrival time
+-----------------------------------------------------------
+            0.138   slack (MET)
+
+

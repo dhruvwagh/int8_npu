@@ -108,8 +108,8 @@ module npu_fetch #(
   always_comb begin
     if (state == FETCH_RUN && (req_cnt < total_words_reg)) begin
       mem_req  = 1'b1;
-      // 16 bytes (1 << 4) per 128-bit word
-      mem_addr = base_reg + (ADDR_W'(req_cnt) << 4);
+      // MEM_DW/8 bytes per memory word
+      mem_addr = base_reg + (ADDR_W'(req_cnt) << $clog2(MEM_DW / 8));
     end else begin
       mem_req  = 1'b0;
       mem_addr = '0;

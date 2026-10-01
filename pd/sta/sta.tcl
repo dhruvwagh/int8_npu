@@ -120,5 +120,11 @@ report_checks -path_delay max -corner ss -group_count 10 -format full_clock_expa
 report_checks -path_delay max -corner tt -group_count 3 -digits 3 > ${rpt}_setup_tt.txt
 report_checks -path_delay min -corner ff -group_count 5 -digits 3 > ${rpt}_hold_ff.txt
 report_check_types -max_slew -max_capacitance -max_fanout -violators > ${rpt}_post_repair_drv.txt
-report_design_area > ${rpt}_area.txt
+foreach c {ss tt ff} {
+  report_check_types -max_delay -min_delay -recovery -removal -min_pulse_width -min_period \
+    -violators -corner $c > ${rpt}_violators_${c}.txt
+}
+sta::redirect_file_begin ${rpt}_area.txt
+report_design_area
+sta::redirect_file_end
 write_verilog pd/netlist/npu_top${rpt_tag}_repaired.v

@@ -7,6 +7,9 @@
 //              - Unmapped addresses return SLVERR (writes are ignored)
 //              - CTRL bits are self-clearing pulses; STATUS.done/err are sticky
 //                until the next start
+//              - Layer configuration registers are write-protected while busy
+//                (write ignored, SLVERR). They are therefore static whenever the
+//                datapath uses them, which the SDC relies on (multicycle paths).
 // Author: Dhruv Wagh
 // ============================================================================
 
@@ -166,9 +169,10 @@ module npu_csr #(
         aw_held       <= 1'b0;
         w_held        <= 1'b0;
         s_axil_bvalid <= 1'b1;
-        s_axil_bresp  <= wr_addr_valid(wr_addr) ? RESP_OKAY : RESP_SLVERR;
+        s_axil_bresp  <= (wr_addr_valid(wr_addr) && (wr_addr == npu_pkg::CSR_CTRL || !busy))
+                         ? RESP_OKAY : RESP_SLVERR;
 
-        case (wr_addr)
+        if (wr_addr == npu_pkg::CSR_CTRL || !busy) case (wr_addr)
           npu_pkg::CSR_CTRL: begin
             if (wr_strb[0]) begin
               start    <= wr_data[npu_pkg::CTRL_START_BIT] && !busy;

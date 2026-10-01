@@ -9,6 +9,8 @@
 //              - Synthesis, USE_MACRO = 0: flip-flop register file. Used for
 //                small buffers where the smallest macro (1 KB, 0.19 mm2) would
 //                be mostly empty.
+//              - FPGA (`define FPGA): the behavioral model, which FPGA synthesis
+//                infers as block RAM.
 //              Read data is only guaranteed in the cycle after the read
 //              (the OpenRAM macro does not hold dout), which is all the NPU uses.
 // Author: Dhruv Wagh
@@ -37,7 +39,13 @@ module npu_sram #(
   output logic [DW-1:0] rdata           // Read data (synchronous 1-cycle latency)
 );
 
-`ifdef SYNTHESIS
+`ifdef FPGA
+  logic [DW-1:0] mem [WORDS];
+  always_ff @(posedge clk) begin
+    if (!csb && we) mem[waddr] <= wdata;
+    if (!csb && re) rdata <= mem[raddr];
+  end
+`elsif SYNTHESIS
   generate
     if (USE_MACRO) begin : g_macro
       localparam int MACRO_DW = 32;

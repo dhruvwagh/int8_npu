@@ -1,0 +1,110 @@
+Startpoint: u_buf_act/u_sram_bank0/g_macro.g_slice[2].u_macro
+            (falling edge-triggered flip-flop clocked by clk)
+Endpoint: col_operands_q[78]_sky130_fd_sc_hd__dfrtp_1_Q
+          (rising edge-triggered flip-flop clocked by clk)
+Path Group: clk
+Path Type: max
+Corner: tt
+
+   Delay     Time   Description
+-----------------------------------------------------------
+  10.000   10.000   clock clk (fall edge)
+   0.000   10.000   clock network delay (ideal)
+   0.000   10.000 v u_buf_act/u_sram_bank0/g_macro.g_slice[2].u_macro/clk1 (sky130_sram_1kbyte_1rw1r_32x256_8)
+   0.364   10.364 v u_buf_act/u_sram_bank0/g_macro.g_slice[2].u_macro/dout1[14] (sky130_sram_1kbyte_1rw1r_32x256_8)
+   0.151   10.515 v wire7392/X (sky130_fd_sc_hd__clkbuf_4)
+   0.143   10.657 v wire7391/X (sky130_fd_sc_hd__buf_6)
+   0.131   10.788 v wire7390/X (sky130_fd_sc_hd__buf_6)
+   0.131   10.919 v wire7389/X (sky130_fd_sc_hd__buf_6)
+   0.308   11.227 v u_buf_act/rd_data_sky130_fd_sc_hd__mux2_2_X_79/X (sky130_fd_sc_hd__mux2_1)
+   0.233   11.460 v col_operands[78]_sky130_fd_sc_hd__and3_1_X/X (sky130_fd_sc_hd__and3_4)
+   0.007   11.467 v col_operands_q[78]_sky130_fd_sc_hd__dfrtp_1_Q/D (sky130_fd_sc_hd__dfrtp_1)
+           11.467   data arrival time
+
+  20.000   20.000   clock clk (rise edge)
+   0.000   20.000   clock network delay (ideal)
+  -0.500   19.500   clock uncertainty
+   0.000   19.500   clock reconvergence pessimism
+           19.500 ^ col_operands_q[78]_sky130_fd_sc_hd__dfrtp_1_Q/CLK (sky130_fd_sc_hd__dfrtp_1)
+  -0.102   19.398   library setup time
+           19.398   data required time
+-----------------------------------------------------------
+           19.398   data required time
+          -11.467   data arrival time
+-----------------------------------------------------------
+            7.931   slack (MET)
+
+
+Startpoint: u_buf_act/u_sram_bank0/g_macro.g_slice[2].u_macro
+            (falling edge-triggered flip-flop clocked by clk)
+Endpoint: col_operands_q[94]_sky130_fd_sc_hd__dfrtp_1_Q
+          (rising edge-triggered flip-flop clocked by clk)
+Path Group: clk
+Path Type: max
+Corner: tt
+
+   Delay     Time   Description
+-----------------------------------------------------------
+  10.000   10.000   clock clk (fall edge)
+   0.000   10.000   clock network delay (ideal)
+   0.000   10.000 v u_buf_act/u_sram_bank0/g_macro.g_slice[2].u_macro/clk1 (sky130_sram_1kbyte_1rw1r_32x256_8)
+   0.357   10.357 v u_buf_act/u_sram_bank0/g_macro.g_slice[2].u_macro/dout1[30] (sky130_sram_1kbyte_1rw1r_32x256_8)
+   0.151   10.508 v wire7341/X (sky130_fd_sc_hd__clkbuf_4)
+   0.143   10.650 v wire7340/X (sky130_fd_sc_hd__buf_6)
+   0.131   10.781 v wire7339/X (sky130_fd_sc_hd__buf_6)
+   0.131   10.912 v wire7338/X (sky130_fd_sc_hd__buf_6)
+   0.317   11.229 v u_buf_act/rd_data_sky130_fd_sc_hd__mux2_2_X_95/X (sky130_fd_sc_hd__mux2_1)
+   0.189   11.418 v col_operands[94]_sky130_fd_sc_hd__and3_1_X/X (sky130_fd_sc_hd__and3_1)
+   0.000   11.418 v col_operands_q[94]_sky130_fd_sc_hd__dfrtp_1_Q/D (sky130_fd_sc_hd__dfrtp_1)
+           11.418   data arrival time
+
+  20.000   20.000   clock clk (rise edge)
+   0.000   20.000   clock network delay (ideal)
+  -0.500   19.500   clock uncertainty
+   0.000   19.500   clock reconvergence pessimism
+           19.500 ^ col_operands_q[94]_sky130_fd_sc_hd__dfrtp_1_Q/CLK (sky130_fd_sc_hd__dfrtp_1)
+  -0.086   19.414   library setup time
+           19.414   data required time
+-----------------------------------------------------------
+           19.414   data required time
+          -11.418   data arrival time
+-----------------------------------------------------------
+            7.996   slack (MET)
+
+
+Startpoint: u_buf_act/u_sram_bank0/g_macro.g_slice[2].u_macro
+            (falling edge-triggered flip-flop clocked by clk)
+Endpoint: col_operands_q[74]_sky130_fd_sc_hd__dfrtp_1_Q
+          (rising edge-triggered flip-flop clocked by clk)
+Path Group: clk
+Path Type: max
+Corner: tt
+
+   Delay     Time   Description
+-----------------------------------------------------------
+  10.000   10.000   clock clk (fall edge)
+   0.000   10.000   clock network delay (ideal)
+   0.000   10.000 v u_buf_act/u_sram_bank0/g_macro.g_slice[2].u_macro/clk1 (sky130_sram_1kbyte_1rw1r_32x256_8)
+   0.416   10.416 v u_buf_act/u_sram_bank0/g_macro.g_slice[2].u_macro/dout1[10] (sky130_sram_1kbyte_1rw1r_32x256_8)
+   0.144   10.559 v wire7404/X (sky130_fd_sc_hd__buf_4)
+   0.136   10.695 v wire7403/X (sky130_fd_sc_hd__buf_6)
+   0.159   10.855 v wire7402/X (sky130_fd_sc_hd__buf_4)
+   0.305   11.159 v u_buf_act/rd_data_sky130_fd_sc_hd__mux2_2_X_75/X (sky130_fd_sc_hd__mux2_1)
+   0.205   11.365 v col_operands[74]_sky130_fd_sc_hd__and3_1_X/X (sky130_fd_sc_hd__and3_1)
+   0.000   11.365 v col_operands_q[74]_sky130_fd_sc_hd__dfrtp_1_Q/D (sky130_fd_sc_hd__dfrtp_1)
+           11.365   data arrival time
+
+  20.000   20.000   clock clk (rise edge)
+   0.000   20.000   clock network delay (ideal)
+  -0.500   19.500   clock uncertainty
+   0.000   19.500   clock reconvergence pessimism
+           19.500 ^ col_operands_q[74]_sky130_fd_sc_hd__dfrtp_1_Q/CLK (sky130_fd_sc_hd__dfrtp_1)
+  -0.094   19.406   library setup time
+           19.406   data required time
+-----------------------------------------------------------
+           19.406   data required time
+          -11.365   data arrival time
+-----------------------------------------------------------
+            8.041   slack (MET)
+
+
